@@ -63,7 +63,9 @@ export const Login = () => {
 
   return (
     <div className="main-wrapper bg-[var(--bg-app)] min-h-screen overflow-x-hidden">
-      <LanguageSelector />
+      <div className="pt-[10px]">
+        <LanguageSelector />
+      </div>
       
       {/* Container Principal Mobile-First */}
       <div className="app-container flex flex-col items-center p-6 bg-[var(--bg-app)] min-h-screen shadow-none border-none relative pt-[24px]">

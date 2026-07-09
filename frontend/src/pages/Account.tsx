@@ -6,6 +6,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '../services/api';
+import { notificationService } from '../services/notificationService';
 
 export const Account = () => {
   const navigate = useNavigate();
@@ -107,13 +108,22 @@ export const Account = () => {
 
   const handleToggleNotifications = async () => {
     const newValue = !notificationsEnabled;
-    setNotificationsEnabled(newValue);
     try {
-      await api.user.updateNotificationSettings(newValue);
+      if (newValue) {
+        const success = await notificationService.subscribe();
+        if (!success) {
+          setNotificationsEnabled(false);
+          setError("Permissao de notificacao negada ou indisponivel no navegador.");
+          return;
+        }
+      } else {
+        await notificationService.unsubscribe();
+      }
+
+      setNotificationsEnabled(newValue);
       setShowSuccess(true);
       setTimeout(() => setShowSuccess(false), 2000);
     } catch (err) {
-      setNotificationsEnabled(!newValue); // Rollback
       setError("Falha ao atualizar configurações de notificação.");
     }
   };

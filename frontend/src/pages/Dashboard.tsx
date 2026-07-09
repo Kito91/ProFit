@@ -425,23 +425,15 @@ export const Dashboard = () => {
 
   const handleEnableNotifications = async () => {
     try {
-      // 1. Mark as enabled in user profile
-      await api.user.updateNotificationSettings(true);
-      
-      // 2. Perform the full Web Push subscription (Ask permission + Register key + Send to backend)
       const success = await notificationService.subscribe();
       
       if (success) {
         console.log('[Dashboard] Native notifications activated successfully');
+        localStorage.setItem('notification_prompt_dismissed', 'true');
+        setShowNotificationPrompt(false);
       } else {
-        console.warn('[Dashboard] Could not activate native push, fallback to browser permission only');
-        if ('Notification' in window) {
-          await Notification.requestPermission();
-        }
+        console.warn('[Dashboard] Could not activate native push');
       }
-
-      localStorage.setItem('notification_prompt_dismissed', 'true');
-      setShowNotificationPrompt(false);
     } catch (err) {
       console.error("Failed to enable notifications", err);
       setShowNotificationPrompt(false);

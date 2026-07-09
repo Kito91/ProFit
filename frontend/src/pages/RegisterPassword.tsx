@@ -16,10 +16,14 @@ import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
 
+const PENDING_QUIZ_DATA_KEY = 'pending_quiz_data';
+const PENDING_QUIZ_STEP_KEY = 'pending_quiz_step';
+const QUIZ_LEAD_ID_KEY = 'quiz_lead_id';
+
 const RegisterPassword = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { login } = useAuth();
+  const { register, refreshUser } = useAuth();
   
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -30,6 +34,44 @@ const RegisterPassword = () => {
   const email = searchParams.get('email') || '';
   const name = searchParams.get('name') || '';
   const plan = searchParams.get('plan') || 'mensal';
+
+  const readPendingQuizData = (): Record<string, any> => {
+    const pendingDataStr = localStorage.getItem(PENDING_QUIZ_DATA_KEY);
+    if (!pendingDataStr) return {};
+
+    try {
+      const parsedData = JSON.parse(pendingDataStr);
+      const safeQuizData: Record<string, any> = { ...(parsedData || {}) };
+      delete safeQuizData.password;
+      return safeQuizData;
+    } catch (e) {
+      console.error("Erro ao ler dados pendentes do quiz", e);
+      return {};
+    }
+  };
+
+  const buildProfileUpdatePayload = (quizData: any) => ({
+    age: quizData.age || null,
+    gender: quizData.gender || null,
+    weight: quizData.current_weight ?? quizData.weight ?? null,
+    height: quizData.height ?? null,
+    primary_objective: quizData.objective ?? quizData.primary_objective ?? null,
+    activity_level: quizData.activity_level ?? null,
+    target_weight: quizData.target_weight ?? null,
+    understands_calories: quizData.understands_calories ?? null,
+    blockers: quizData.obstacles ?? quizData.blockers ?? [],
+    phone: quizData.phone || null,
+    onboarding_completed: true,
+  });
+
+  const syncPendingQuizData = async (quizData: any, leadId: string) => {
+    await api.quiz.syncLead({
+      id: leadId,
+      responses: quizData,
+      current_step: 36,
+      is_completed: true,
+    });
+  };
 
   useEffect(() => {
     // Simulando um progresso de "configurando conta"
@@ -57,42 +99,54 @@ const RegisterPassword = () => {
 
     try {
       // Recuperar dados do Quiz salvos antes do checkout
-      const pendingDataStr = localStorage.getItem('pending_quiz_data');
-      let quizData = {};
-      if (pendingDataStr) {
-        try {
-          quizData = JSON.parse(pendingDataStr);
-        } catch (e) {
-          console.error("Erro ao ler dados pendentes do quiz", e);
-        }
-      }
+      const quizData = readPendingQuizData();
 
       // Recuperar ID do Lead para conversão
-      const leadId = localStorage.getItem('quiz_lead_id');
+      let leadId = localStorage.getItem(QUIZ_LEAD_ID_KEY);
+      if (!leadId) {
+        leadId = crypto.randomUUID();
+        localStorage.setItem(QUIZ_LEAD_ID_KEY, leadId);
+      }
 
       // 1. Registrar Usuário no Backend
-      const response = await api.auth.register(
+      const createdUser = await register(
         name,
         email,
         password,
-        undefined, // referralCode
+        quizData.referral_code || undefined,
         {
           ...quizData,
           plan: plan,
           subscription_status: 'ativo', // Ja pagou
+          onboarding_completed: true,
           leadId: leadId
         }
       );
 
-      if (response.token && response.user) {
+      if (createdUser) {
+        // 2. Sincronizar o quiz agora que o token jÃ¡ existe no contexto
+        let quizSyncCompleted = false;
+        try {
+          await syncPendingQuizData(quizData, leadId);
+          quizSyncCompleted = true;
+        } catch (syncError) {
+          console.warn('Erro ao sincronizar quiz pendente:', syncError);
+        }
+
+        await api.user.update(buildProfileUpdatePayload(quizData));
+        await refreshUser();
+
         setProgress(100);
         toast.success(`Bem-vindo ao ProFit, ${name}!`);
         
         // 2. Iniciar Sessão Automaticamente
-        login(response.token, response.user);
         
         // 3. Limpar dados temporários
-        localStorage.removeItem('pending_quiz_data');
+        if (quizSyncCompleted) {
+          localStorage.removeItem(PENDING_QUIZ_DATA_KEY);
+          localStorage.removeItem(PENDING_QUIZ_STEP_KEY);
+          localStorage.removeItem(QUIZ_LEAD_ID_KEY);
+        }
         
         // 4. Redirecionar para Home (Dashboard)
         setTimeout(() => {

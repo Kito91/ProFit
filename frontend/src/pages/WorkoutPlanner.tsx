@@ -948,12 +948,12 @@ export const WorkoutPlanner = () => {
               </div>
 
               {/* Progress Bar */}
-              <div className="bg-[#F0F9EB] rounded-[32px] p-6 border border-[#56AB2F]/10">
+              <div className="bg-[var(--bg-card)] rounded-[32px] p-6 border border-white/10 shadow-sm">
                 <div className="flex justify-between items-center mb-4">
                    <h4 className="text-base font-black text-[var(--text-main)]">{langData.PT ? 'Seu Progresso' : 'Your Progress'}</h4>
                    <Trophy className="w-6 h-6 text-[#56AB2F]" />
                 </div>
-                <div className="w-full h-3 bg-[var(--bg-card)] rounded-full overflow-hidden">
+                <div className="w-full h-3 bg-white/10 rounded-full overflow-hidden">
                   <motion.div 
                     initial={{ width: 0 }}
                     animate={{ width: `${(completedSessions.length / (activePlan.structured_plan?.daily_workouts?.length || 1)) * 100}%` }}

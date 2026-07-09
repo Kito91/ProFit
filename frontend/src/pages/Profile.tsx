@@ -55,7 +55,9 @@ export const Profile = () => {
   };
 
   const handleToggleNotifications = async () => {
-    if (profile?.notifications_enabled) {
+    const browserPermission = notificationService.getPermissionStatus();
+
+    if (profile?.notifications_enabled && browserPermission === 'granted') {
       setShowDisableModal(true);
     } else {
       confirmEnableNotifications();
@@ -68,6 +70,7 @@ export const Profile = () => {
       if (success) {
         setProfile({ ...profile, notifications_enabled: true });
       } else {
+        setProfile({ ...profile, notifications_enabled: false });
         console.log("Permission denied or failed to subscribe");
       }
     } catch (err) {

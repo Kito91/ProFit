@@ -94,7 +94,7 @@ const handleResponse = async (res: Response) => {
   }
   
   if (!res.ok) {
-    const isPublicRoute = ['/login', '/register', '/onboarding', '/checkout', '/forgot-password', '/reset-password', '/auth/invite'].some(path => window.location.pathname.startsWith(path));
+    const isPublicRoute = ['/login', '/register', '/onboarding', '/quiz', '/checkout', '/forgot-password', '/reset-password', '/auth/invite', '/activate', '/accept-invite', '/register-password'].some(path => window.location.pathname.startsWith(path));
     
     // Redirect to login if unauthorized or if user/profile is not found
     const isPaywallError = res.status === 403 && data.code === 'PAYWALL_ACTIVE';

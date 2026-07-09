@@ -7,17 +7,14 @@ import { useAuth } from '../context/AuthContext';
 export const NotificationPrompt = () => {
   const { user, isAuthenticated } = useAuth();
   const [show, setShow] = useState(false);
-  const [status, setStatus] = useState<'prompt' | 'loading' | 'success' | 'denied'>('prompt');
+  const [status, setStatus] = useState<'prompt' | 'loading' | 'success' | 'denied' | 'ios-guide'>('prompt');
   const [isManualAction, setIsManualAction] = useState(false);
 
-  const handleEnable = useCallback(async () => {
+  const handleEnable = useCallback(async (manualAction = false) => {
     if (!isAuthenticated) return;
     
-    // Check if we already have permission before loading
-    const initialPermission = Notification.permission;
-    
     // Avoid redundant registration if already successful in this session
-    if (sessionStorage.getItem('notification_registered')) {
+    if (sessionStorage.getItem('notification_registered') && notificationService.getPermissionStatus() === 'granted') {
       setStatus('success');
       setTimeout(() => setShow(false), 2000);
       return;
@@ -33,7 +30,7 @@ export const NotificationPrompt = () => {
       } else {
         // If it's a manual click, we can show it's denied/failed
         // If it was auto-trigger, we just keep quiet
-        if (isManualAction) {
+        if (manualAction || isManualAction) {
           setStatus('denied');
         } else {
           setShow(false);
@@ -51,22 +48,31 @@ export const NotificationPrompt = () => {
       setStatus('denied');
       setShow(true); 
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, isManualAction]);
 
   useEffect(() => {
-    if (!('Notification' in window) || !('serviceWorker' in navigator) || !isAuthenticated) return;
+    if (!isAuthenticated) return;
 
     // SUPPRESS on Quiz page - Don't annoy user during onboarding
-    if (window.location.pathname.startsWith('/quiz')) {
-      setShow(false);
-      return;
+    if (window.location.pathname.startsWith('/quiz')) return;
+
+    // iOS non-PWA: show Add to Home Screen guide instead
+    if (notificationService.isIOSNotPWA()) {
+      const timer = setTimeout(() => {
+        if (!localStorage.getItem('notification_prompt_dismissed')) {
+          setStatus('ios-guide');
+          setShow(true);
+        }
+      }, 3000);
+      return () => clearTimeout(timer);
     }
 
-    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone;
+    if (!('Notification' in window) || !('serviceWorker' in navigator)) return;
+
+    const isStandalone = notificationService.isStandalone();
     const permission = Notification.permission;
-    
+
     if (permission === 'granted') {
-      // If already registered in this session, don't even trigger handleEnable (which hits the API)
       if (sessionStorage.getItem('notification_registered')) {
         setShow(false);
         return;
@@ -76,7 +82,6 @@ export const NotificationPrompt = () => {
     }
 
     if (permission === 'default') {
-      // If PWA (standalone), show prompt faster
       const delay = isStandalone ? 1500 : 4000;
       const timer = setTimeout(() => {
         if (!localStorage.getItem('notification_prompt_dismissed')) {
@@ -135,7 +140,37 @@ export const NotificationPrompt = () => {
               </button>
 
               <div className="p-6">
-                {status === 'success' ? (
+                {status === 'ios-guide' ? (
+                  <div className="flex flex-col items-center text-center py-1">
+                    <div className="w-14 h-14 bg-blue-100 rounded-2xl flex items-center justify-center mb-4 text-2xl">
+                      📲
+                    </div>
+                    <h3 className="text-[17px] font-black text-[var(--text-main)] mb-1">Instale o app primeiro</h3>
+                    <p className="text-[12px] text-[var(--text-muted)] mb-5 leading-relaxed">
+                      No iOS, as notificações push só funcionam quando o app está instalado no ecrã inicial.
+                    </p>
+                    <div className="w-full space-y-2.5 text-left mb-5">
+                      {[
+                        { step: '1', icon: '⬆️', text: 'Toque no botão Partilhar na barra do Safari' },
+                        { step: '2', icon: '➕', text: 'Selecione "Adicionar ao Ecrã Inicial"' },
+                        { step: '3', icon: '🏠', text: 'Abra o ProFit pelo ícone no ecrã inicial' },
+                        { step: '4', icon: '🔔', text: 'Active as notificações dentro do app' },
+                      ].map(({ step, icon, text }) => (
+                        <div key={step} className="flex items-center gap-3 bg-gray-50 rounded-xl px-3 py-2.5">
+                          <span className="w-5 h-5 rounded-full bg-blue-600 text-white text-[10px] font-black flex items-center justify-center flex-shrink-0">{step}</span>
+                          <span className="text-base">{icon}</span>
+                          <span className="text-[12px] text-[var(--text-muted)] font-medium leading-tight">{text}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <button
+                      onClick={handleDismiss}
+                      className="w-full py-3 bg-gray-900 text-white rounded-xl font-bold text-[13px] active:scale-95 transition-all"
+                    >
+                      Entendi
+                    </button>
+                  </div>
+                ) : status === 'success' ? (
                   <motion.div
                     initial={{ opacity: 0, scale: 0.9 }}
                     animate={{ opacity: 1, scale: 1 }}
@@ -157,7 +192,7 @@ export const NotificationPrompt = () => {
                       Para ativar, clique no ícone de cadeado 🔒 na barra de endereços do navegador e altere <strong>Notificações</strong> para <strong>Permitir</strong>.
                     </div>
                     <button
-                      onClick={handleEnable}
+                      onClick={() => handleEnable(true)}
                       className="w-full py-3 bg-gray-900 text-white rounded-xl font-bold text-[13px] flex items-center justify-center gap-2 active:scale-95 transition-all shadow-lg"
                     >
                       <ShieldCheck className="w-4 h-4" />
@@ -195,7 +230,7 @@ export const NotificationPrompt = () => {
                     <button
                       onClick={() => {
                         setIsManualAction(true);
-                        handleEnable();
+                        handleEnable(true);
                       }}
                       disabled={status === 'loading'}
                       className="w-full py-4 bg-gradient-to-r from-[#56AB2F] to-[#A8E063] text-white rounded-[18px] font-black text-[14px] uppercase tracking-widest flex items-center justify-center gap-2 active:scale-95 transition-all shadow-[0_8px_24px_rgba(86,171,47,0.35)] disabled:opacity-70"

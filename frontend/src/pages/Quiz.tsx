@@ -7,6 +7,9 @@ import { useLanguage } from '../context/LanguageContext';
 import { ChevronLeft, ChevronRight, BarChart2, Users, Calendar, Apple, Utensils, Sun, Dumbbell, Smile, Trophy, Star, CheckCircle, MessageCircle, Clock, Sparkles, Zap, Bell, ChevronDown, User, Lock, X, Scan, Image as ImageIcon, ShieldCheck, Crown } from 'lucide-react';
 import { ConfirmModal } from '../components/ConfirmModal';
 
+const PENDING_QUIZ_DATA_KEY = 'pending_quiz_data';
+const PENDING_QUIZ_STEP_KEY = 'pending_quiz_step';
+
 const COUNTRIES = [
   { code: 'MZ', name: 'Moçambique', prefix: '+258', flag: 'https://flagcdn.com/w40/mz.png' },
   { code: 'ZA', name: 'África do Sul', prefix: '+27', flag: 'https://flagcdn.com/w40/za.png' },
@@ -124,22 +127,23 @@ export const Quiz = () => {
     return newId;
   });
 
-  const buildRegistrationPayload = (data: any) => ({
-    gender: data.gender,
-    objective: data.objective,
-    height: data.height,
-    weight: data.current_weight,
-    target_weight: data.target_weight,
-    activity_level: data.activity_level,
-    age: data.age,
-    workout_frequency: data.workout_frequency,
-    weight_loss_velocity: data.weight_loss_velocity,
-    obstacles: data.obstacles,
-    goals: data.goals,
-    referral_source: data.referral_source,
-    referral_code: data.referral_code,
-    understands_calories: data.understands_calories,
-  });
+  const buildRegistrationPayload = (data: any) => {
+    const { password, ...safeData } = data || {};
+
+    return {
+      ...safeData,
+      weight: safeData.current_weight ?? safeData.weight,
+      primary_objective: safeData.objective ?? safeData.primary_objective,
+      blockers: safeData.obstacles ?? safeData.blockers ?? [],
+    };
+  };
+
+  const persistLocalQuizProgress = (currentStep: number, data: any) => {
+    if (localStorage.getItem('token')) return;
+
+    localStorage.setItem(PENDING_QUIZ_DATA_KEY, JSON.stringify(buildRegistrationPayload(data)));
+    localStorage.setItem(PENDING_QUIZ_STEP_KEY, String(currentStep));
+  };
 
   const syncLead = async (currentStep: number, currentData: any = null, isCompleted = false) => {
     if (!localStorage.getItem('token')) return;
@@ -159,6 +163,27 @@ export const Quiz = () => {
   // Restore quiz state on reload, then sync initial step
   useEffect(() => {
     const restoreSync = async () => {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        try {
+          const pendingQuizData = localStorage.getItem(PENDING_QUIZ_DATA_KEY);
+          if (pendingQuizData) {
+            const parsedData = JSON.parse(pendingQuizData);
+            if (parsedData && typeof parsedData === 'object') {
+              setFormData((prev: any) => ({ ...prev, ...parsedData }));
+            }
+          }
+
+          const pendingStep = Number(localStorage.getItem(PENDING_QUIZ_STEP_KEY));
+          if (pendingStep > 1 && pendingStep <= totalSteps) {
+            setStep(pendingStep);
+          }
+        } catch (err) {
+          console.warn('Could not restore local quiz progress:', err);
+        }
+        return;
+      }
+
       try {
         const data = await api.quiz.getSync();
         if (data?.lead) {
@@ -307,7 +332,7 @@ export const Quiz = () => {
       case 21: return !!formData.activity_level;
       case 28: return !!formData.referral_source;
       case 29: return formData.name?.trim().length > 1;
-      case 30: return formData.email?.includes('@') && formData.email?.includes('.') && formData.password?.length >= 6;
+      case 30: return formData.email?.includes('@') && formData.email?.includes('.');
       case 31: return formData.phone?.trim().length >= 9;
       case 32: return true; // Cupom é opcional (skip)
       case 27: return analysisProgress === 100;
@@ -552,6 +577,7 @@ export const Quiz = () => {
         }
       }
       
+      persistLocalQuizProgress(step, newData);
       return newData;
     });
   };
@@ -560,6 +586,7 @@ export const Quiz = () => {
     setStepHistory(prev => [...prev, step]);
     setDirection(1);
     setStep(newStep);
+    persistLocalQuizProgress(newStep, formData);
     syncLead(newStep);
   };
 
@@ -702,10 +729,13 @@ export const Quiz = () => {
       const prev = stepHistory[stepHistory.length - 1];
       setStepHistory(prevArr => prevArr.slice(0, -1));
       setStep(prev);
+      persistLocalQuizProgress(prev, formData);
     } else if (step === 1) {
       navigate(-1);
     } else {
-      setStep(step - 1);
+      const previousStep = step - 1;
+      setStep(previousStep);
+      persistLocalQuizProgress(previousStep, formData);
     }
   };
 
@@ -715,8 +745,13 @@ export const Quiz = () => {
         // Redirecionamento Final para Checkout
         console.log("Onboarding finalizado, salvando dados...");
 
-        await syncLead(36, null, true);
-        localStorage.setItem('pending_quiz_data', JSON.stringify(formData));
+        const pendingQuizData = buildRegistrationPayload(formData);
+
+        await syncLead(36, pendingQuizData, true);
+
+        if (!localStorage.getItem('token')) {
+          persistLocalQuizProgress(36, pendingQuizData);
+        }
 
         if (isFreePromoActive) {
           console.log("[Quiz] Promo ativa! Pulando checkout...");
@@ -2061,19 +2096,8 @@ export const Quiz = () => {
                 placeholder={langData.quiz_email_placeholder}
                 value={formData.email || ''}
                 onChange={(e) => updateField('email', e.target.value)}
-                className="w-full bg-white/5 rounded-[16px] px-5 py-4 text-[16px] font-bold text-white placeholder-gray-500 outline-none border border-white/10 focus:border-white/20 transition-all shadow-sm mb-4"
-                autoFocus
-              />
-
-              <label className="text-[12px] font-black text-gray-400 mb-2 ml-1 uppercase tracking-[2px]">
-                {language === 'PT' ? 'Senha' : 'Password'}
-              </label>
-              <input
-                type="password"
-                placeholder={language === 'PT' ? 'Mínimo 6 caracteres' : 'At least 6 characters'}
-                value={formData.password || ''}
-                onChange={(e) => updateField('password', e.target.value)}
                 className="w-full bg-white/5 rounded-[16px] px-5 py-4 text-[16px] font-bold text-white placeholder-gray-500 outline-none border border-white/10 focus:border-white/20 transition-all shadow-sm"
+                autoFocus
               />
             </div>
           </motion.div>
