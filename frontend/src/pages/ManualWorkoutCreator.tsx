@@ -1,22 +1,26 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { 
-  Dumbbell, 
-  ChevronLeft, 
-  Plus, 
-  Trash2, 
-  Edit2, 
-  Save, 
-  PlusCircle, 
-  X,
-  Clock,
-  RotateCcw,
-  CheckCircle2,
-  AlertCircle
+import {
+  ChevronLeft, Plus, Trash2, Edit2, Clock, Save, X, Check, Dumbbell
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '../services/api';
 import toast from 'react-hot-toast';
+
+const DAYS_SHORT = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
+const DAYS_FULL  = [
+  'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira',
+  'Sexta-feira', 'Sábado', 'Domingo'
+];
+
+const MUSCLE_GROUPS = [
+  'Peito', 'Costas', 'Pernas', 'Ombros',
+  'Bíceps', 'Tríceps', 'Core', 'Glúteos', 'Full Body', 'Cardio'
+];
+
+const SETS_OPTIONS = ['2', '3', '4', '5', '6'];
+const REPS_OPTIONS = ['6', '8', '10', '12', '15', '20'];
+const REST_OPTIONS = ['30s', '45s', '60s', '90s', '2min'];
 
 interface Exercise {
   id: string;
@@ -24,388 +28,402 @@ interface Exercise {
   sets: string;
   reps: string;
   rest: string;
-  muscle_group?: string;
 }
 
-interface DayWorkout {
-  day: string;
-  muscles: string;
-  exercises: Exercise[];
-}
-
-const DAYS = [
-  'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 
-  'Sexta-feira', 'Sábado', 'Domingo'
-];
+const DRAFT_KEY = 'manual_workout_draft_v3';
 
 export const ManualWorkoutCreator: React.FC = () => {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState(DAYS[0]);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [editingExerciseId, setEditingExerciseId] = useState<string | null>(null);
 
-  // State for all days
-  const [workoutData, setWorkoutData] = useState<Record<string, DayWorkout>>(
-    DAYS.reduce((acc, day) => ({
-      ...acc,
-      [day]: { day, muscles: '', exercises: [] }
-    }), {})
-  );
+  const [planName,      setPlanName]      = useState('Meu Treino');
+  const [selectedDays,  setSelectedDays]  = useState<number[]>([]);
+  const [workoutTime,   setWorkoutTime]   = useState('07:00');
+  const [muscleGroup,   setMuscleGroup]   = useState('');
+  const [exercises,     setExercises]     = useState<Exercise[]>([]);
+  const [isSaving,      setIsSaving]      = useState(false);
 
-  // Form state for modal
-  const [exerciseForm, setExerciseForm] = useState<Omit<Exercise, 'id'>>({
-    name: '',
-    sets: '',
-    reps: '',
-    rest: ''
-  });
+  // bottom sheet
+  const [sheetOpen,  setSheetOpen]  = useState(false);
+  const [editingId,  setEditingId]  = useState<string | null>(null);
+  const [exForm, setExForm] = useState({ name: '', sets: '3', reps: '10', rest: '60s' });
 
-  // Load draft from localStorage OR fetch current manual plan
+  // ── Load draft or existing custom workout ────────────────────────────────
   useEffect(() => {
-    const draft = localStorage.getItem('manual_workout_draft');
-    if (draft) {
+    const raw = localStorage.getItem(DRAFT_KEY);
+    if (raw) {
       try {
-        setWorkoutData(JSON.parse(draft));
-      } catch (e) {
-        console.error('Failed to parse draft', e);
-      }
-    } else {
-      // If no draft, check if we have an active manual plan to edit
-      const fetchCurrentPlan = async () => {
-        try {
-          const plan = await api.workouts.getActive();
-          if (plan && plan.goal === 'Manual' && plan.structured_plan?.daily_workouts) {
-            const data: Record<string, DayWorkout> = {};
-            DAYS.forEach(day => {
-              const dw = plan.structured_plan.daily_workouts.find((d: any) => d.day === day) || { day, muscles: '', exercises: [] };
-              data[day] = dw;
-            });
-            setWorkoutData(data);
-          }
-        } catch (e) {
-          console.error('Failed to fetch active plan for editing', e);
-        }
-      };
-      fetchCurrentPlan();
+        const d = JSON.parse(raw);
+        setPlanName(d.planName       ?? 'Meu Treino');
+        setSelectedDays(d.selectedDays ?? []);
+        setWorkoutTime(d.workoutTime   ?? '07:00');
+        setMuscleGroup(d.muscleGroup   ?? '');
+        setExercises(d.exercises       ?? []);
+        return;
+      } catch (_) {}
     }
+    api.customWorkouts.list().then((list: any[]) => {
+      if (!Array.isArray(list) || list.length === 0) return;
+      const w = list[0];
+      setPlanName(w.name ?? 'Meu Treino');
+      setWorkoutTime(w.workout_time ?? '07:00');
+      setMuscleGroup(w.muscle_group ?? '');
+      if (Array.isArray(w.exercises)) setExercises(w.exercises);
+      if (Array.isArray(w.days)) setSelectedDays(w.days);
+    }).catch(() => {});
   }, []);
 
-  // Save draft to localStorage
+  // ── Persist draft ────────────────────────────────────────────────────────
   useEffect(() => {
-    localStorage.setItem('manual_workout_draft', JSON.stringify(workoutData));
-  }, [workoutData]);
-
-  const handleMusclesChange = (val: string) => {
-    setWorkoutData(prev => ({
-      ...prev,
-      [activeTab]: { ...prev[activeTab], muscles: val }
+    localStorage.setItem(DRAFT_KEY, JSON.stringify({
+      planName, selectedDays, workoutTime, muscleGroup, exercises
     }));
+  }, [planName, selectedDays, workoutTime, muscleGroup, exercises]);
+
+  // ── Day toggle ───────────────────────────────────────────────────────────
+  const toggleDay = (i: number) =>
+    setSelectedDays(prev => prev.includes(i) ? prev.filter(d => d !== i) : [...prev, i]);
+
+  // ── Exercise sheet ───────────────────────────────────────────────────────
+  const openAdd = () => {
+    setEditingId(null);
+    setExForm({ name: '', sets: '3', reps: '10', rest: '60s' });
+    setSheetOpen(true);
   };
 
-  const openAddModal = () => {
-    setEditingExerciseId(null);
-    setExerciseForm({ name: '', sets: '', reps: '', rest: '' });
-    setIsModalOpen(true);
+  const openEdit = (ex: Exercise) => {
+    setEditingId(ex.id);
+    setExForm({ name: ex.name, sets: ex.sets, reps: ex.reps, rest: ex.rest });
+    setSheetOpen(true);
   };
 
-  const openEditModal = (exercise: Exercise) => {
-    setEditingExerciseId(exercise.id);
-    setExerciseForm({ 
-      name: exercise.name, 
-      sets: exercise.sets, 
-      reps: exercise.reps, 
-      rest: exercise.rest 
-    });
-    setIsModalOpen(true);
-  };
-
-  const handleDeleteExercise = (id: string) => {
-    setWorkoutData(prev => ({
-      ...prev,
-      [activeTab]: {
-        ...prev[activeTab],
-        exercises: prev[activeTab].exercises.filter(ex => ex.id !== id)
-      }
-    }));
-    toast.success('Exercício removido');
-  };
-
-  const handleSaveExercise = () => {
-    if (!exerciseForm.name || !exerciseForm.sets || !exerciseForm.reps) {
-      toast.error('Preencha os campos obrigatórios');
-      return;
-    }
-
-    if (editingExerciseId) {
-      // Edit
-      setWorkoutData(prev => ({
-        ...prev,
-        [activeTab]: {
-          ...prev[activeTab],
-          exercises: prev[activeTab].exercises.map(ex => 
-            ex.id === editingExerciseId ? { ...ex, ...exerciseForm } : ex
-          )
-        }
-      }));
-      toast.success('Exercício atualizado');
+  const confirmExercise = () => {
+    if (!exForm.name.trim()) { toast.error('Digite o nome do exercício'); return; }
+    if (editingId) {
+      setExercises(prev => prev.map(ex => ex.id === editingId ? { ...ex, ...exForm } : ex));
     } else {
-      // Add
-      const newEx: Exercise = {
-        ...exerciseForm,
-        id: Math.random().toString(36).substr(2, 9)
-      };
-      setWorkoutData(prev => ({
-        ...prev,
-        [activeTab]: {
-          ...prev[activeTab],
-          exercises: [...prev[activeTab].exercises, newEx]
-        }
-      }));
-      toast.success('Exercício adicionado');
+      setExercises(prev => [...prev, { ...exForm, id: Date.now().toString() }]);
     }
-
-    setIsModalOpen(false);
+    setSheetOpen(false);
   };
 
-  const handleFinalSave = async () => {
-    const daysWithExercises = Object.values(workoutData).filter(dw => dw.exercises.length > 0);
-    
-    if (daysWithExercises.length === 0) {
-      toast.error('Adicione ao menos um exercício em algum dia');
-      return;
-    }
+  const removeExercise = (id: string) =>
+    setExercises(prev => prev.filter(ex => ex.id !== id));
+
+  // ── Save ─────────────────────────────────────────────────────────────────
+  const handleSave = async () => {
+    if (selectedDays.length === 0) { toast.error('Selecione pelo menos um dia de treino'); return; }
+    if (exercises.length === 0)    { toast.error('Adicione pelo menos um exercício');       return; }
 
     setIsSaving(true);
     try {
-      const structuredPlan = {
-        title: 'Meu Plano Personalizado',
-        message: '',
-        daily_workouts: Object.values(workoutData)
-      };
+      await api.customWorkouts.create({
+        name:         planName,
+        workout_time: workoutTime,
+        muscle_group: muscleGroup,
+        exercises:    exercises.map(({ id, ...ex }) => ex),
+        days:         selectedDays,
+      } as any);
 
-      await api.workouts.saveManual(structuredPlan);
-      toast.success('Plano salvo com sucesso! 💪');
-      localStorage.removeItem('manual_workout_draft');
+      toast.success('Treino salvo com sucesso! 💪');
+      localStorage.removeItem(DRAFT_KEY);
       navigate('/workout');
     } catch (err: any) {
-      toast.error(err.message || 'Falha ao salvar plano');
+      toast.error(err.message || 'Falha ao salvar treino');
     } finally {
       setIsSaving(false);
     }
   };
 
+  // ─────────────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-[#0A0F14] text-white pb-24 font-sans">
-      {/* Header Compacto e Centralizado */}
-      <div className="sticky top-0 z-40 bg-[#0A0F14]/90 backdrop-blur-2xl border-b border-white/[0.03]">
-        <div className="max-w-md mx-auto px-5 h-20 relative flex flex-col items-center justify-center text-center">
-          {/* Botão de Voltar - Posicionado de forma profissional */}
-          <button 
+    <div className="min-h-screen bg-[#0A0F14] text-white pb-28 font-sans">
+
+      {/* ── Header ── */}
+      <div className="sticky top-0 z-40 bg-[#0A0F14]/95 backdrop-blur-xl border-b border-white/5">
+        <div className="max-w-md mx-auto px-5 h-[60px] flex items-center gap-3">
+          <button
             onClick={() => navigate('/workout')}
-            className="absolute left-5 top-1/2 -translate-y-1/2 p-2.5 bg-white/[0.03] rounded-xl hover:bg-white/[0.08] border border-white/[0.05] transition-all active:scale-90 z-20"
+            className="p-2 rounded-xl bg-white/5 border border-white/10 active:scale-90 transition-all"
           >
-            <ChevronLeft className="w-5 h-5 text-[#56AB2F]" />
+            <ChevronLeft className="w-5 h-5 text-white" />
           </button>
-          
-          <div className="relative z-10">
-            <h1 className="text-[19px] font-semibold tracking-tight text-white">
-              Criar Seu Plano
-            </h1>
-            <p className="text-[13px] font-medium text-slate-500 mt-0.5">
-              Personalização Manual
-            </p>
+          <div>
+            <h1 className="text-[17px] font-bold leading-tight">Adicionar Treino</h1>
+            <p className="text-[12px] text-slate-500">Configure sua rotina</p>
           </div>
         </div>
       </div>
 
-      <div className="max-w-md mx-auto">
-        {/* Tabs - Ultra Compact */}
-        <div className="relative group">
-          <div className="px-5 py-5 overflow-x-auto whitespace-nowrap scrollbar-hide flex gap-2 no-scrollbar scroll-smooth">
-            {DAYS.map((day) => {
-              const shortDay = day.split('-')[0];
-              const hasExercises = workoutData[day].exercises.length > 0;
-              const isActive = activeTab === day;
-              
-              return (
-                <button
-                  key={day}
-                  onClick={() => setActiveTab(day)}
-                  className={`h-9 px-4 rounded-xl font-semibold text-[13px] transition-all duration-300 relative flex items-center gap-1.5 border ${
-                    isActive 
-                    ? 'bg-[#56AB2F] border-[#56AB2F] text-white shadow-lg shadow-[#56AB2F]/10' 
-                    : 'bg-white/[0.03] border-white/[0.05] text-slate-500'
-                  }`}
-                >
-                  <span>{shortDay}</span>
-                  {hasExercises && (
-                    <span className={`w-1.5 h-1.5 rounded-full ${isActive ? 'bg-white/40' : 'bg-[#56AB2F]'}`} />
-                  )}
-                </button>
-              );
-            })}
-          </div>
-          <div className="absolute left-0 top-0 bottom-0 w-6 bg-gradient-to-r from-[#0A0F14] to-transparent pointer-events-none z-10" />
-          <div className="absolute right-0 top-0 bottom-0 w-6 bg-gradient-to-l from-[#0A0F14] to-transparent pointer-events-none z-10" />
-        </div>
+      <div className="max-w-md mx-auto px-5 pt-6 space-y-7">
 
-        {/* Content Section - Compact Spacing */}
-        <div className="px-5 space-y-6 pb-20">
-          <motion.div
-            key={activeTab}
-            initial={{ opacity: 0, scale: 0.98 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.3 }}
-            className="space-y-6 flex flex-col items-center w-full"
+        {/* ── Nome do plano ── */}
+        <section className="space-y-2">
+          <label className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Nome do Plano</label>
+          <input
+            type="text"
+            value={planName}
+            onChange={e => setPlanName(e.target.value)}
+            placeholder="Ex: Treino de Força"
+            className="w-full h-12 bg-white/5 rounded-2xl px-4 text-[15px] font-medium border border-white/10 outline-none focus:border-[#56AB2F]/50 transition-all placeholder:text-slate-700"
+          />
+        </section>
+
+        {/* ── Dias de treino ── */}
+        <section className="space-y-3">
+          <label className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Dias de Treino</label>
+          <div className="grid grid-cols-7 gap-1.5">
+            {DAYS_SHORT.map((day, i) => (
+              <button
+                key={i}
+                onClick={() => toggleDay(i)}
+                className={`h-11 rounded-2xl text-[11px] font-black transition-all active:scale-90 flex items-center justify-center ${
+                  selectedDays.includes(i)
+                    ? 'bg-[#56AB2F] text-white shadow-lg shadow-[#56AB2F]/25'
+                    : 'bg-white/5 text-slate-500 border border-white/10'
+                }`}
+              >
+                {day}
+              </button>
+            ))}
+          </div>
+          <p className="text-[12px] text-slate-600 text-center">
+            {selectedDays.length === 0
+              ? 'Toque nos dias para selecionar'
+              : `${selectedDays.length} dia${selectedDays.length > 1 ? 's' : ''} selecionado${selectedDays.length > 1 ? 's' : ''}`}
+          </p>
+        </section>
+
+        {/* ── Horário do treino ── */}
+        <section className="space-y-3">
+          <label className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Horário do Treino</label>
+          <div className="flex items-center gap-3 bg-white/5 rounded-2xl px-4 h-14 border border-white/10 focus-within:border-[#56AB2F]/50 transition-all">
+            <Clock className="w-5 h-5 text-[#56AB2F] flex-shrink-0" />
+            <input
+              type="time"
+              value={workoutTime}
+              onChange={e => setWorkoutTime(e.target.value)}
+              className="flex-1 bg-transparent text-[17px] font-bold outline-none [color-scheme:dark]"
+            />
+          </div>
+        </section>
+
+        {/* ── Grupo muscular ── */}
+        <section className="space-y-3">
+          <label className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Grupo Muscular</label>
+          <div className="flex flex-wrap gap-2">
+            {MUSCLE_GROUPS.map(mg => (
+              <button
+                key={mg}
+                onClick={() => setMuscleGroup(prev => prev === mg ? '' : mg)}
+                className={`px-3.5 py-2 rounded-xl text-[12px] font-bold transition-all active:scale-90 ${
+                  muscleGroup === mg
+                    ? 'bg-[#56AB2F] text-white shadow-md shadow-[#56AB2F]/20'
+                    : 'bg-white/5 text-slate-400 border border-white/10'
+                }`}
+              >
+                {mg}
+              </button>
+            ))}
+          </div>
+        </section>
+
+        {/* ── Exercícios ── */}
+        <section className="space-y-3">
+          <div className="flex items-center justify-between">
+            <label className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Exercícios</label>
+            {exercises.length > 0 && (
+              <span className="text-[11px] font-bold text-[#56AB2F] bg-[#56AB2F]/10 px-2 py-0.5 rounded-lg">
+                {exercises.length} adicionado{exercises.length > 1 ? 's' : ''}
+              </span>
+            )}
+          </div>
+
+          <AnimatePresence mode="popLayout">
+            {exercises.map((ex, i) => (
+              <motion.div
+                key={ex.id}
+                layout
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, x: -20, height: 0, marginBottom: 0 }}
+                transition={{ duration: 0.2 }}
+                className="bg-white/[0.04] rounded-2xl p-4 border border-white/[0.06] flex items-center gap-3"
+              >
+                <div className="w-8 h-8 rounded-xl bg-[#56AB2F]/15 flex items-center justify-center flex-shrink-0">
+                  <span className="text-[12px] font-black text-[#56AB2F]">{i + 1}</span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[14px] font-bold truncate">{ex.name}</p>
+                  <p className="text-[12px] text-slate-500 mt-0.5">
+                    {ex.sets} séries · {ex.reps} reps · {ex.rest}
+                  </p>
+                </div>
+                <div className="flex gap-1.5 flex-shrink-0">
+                  <button
+                    onClick={() => openEdit(ex)}
+                    className="w-8 h-8 rounded-xl bg-white/5 flex items-center justify-center text-slate-400 active:scale-90 transition-all"
+                  >
+                    <Edit2 className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={() => removeExercise(ex.id)}
+                    className="w-8 h-8 rounded-xl bg-red-500/10 flex items-center justify-center text-red-400 active:scale-90 transition-all"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </motion.div>
+            ))}
+          </AnimatePresence>
+
+          {exercises.length === 0 && (
+            <div className="py-10 flex flex-col items-center gap-3 bg-white/[0.02] rounded-2xl border border-dashed border-white/10">
+              <Dumbbell className="w-8 h-8 text-slate-700" />
+              <p className="text-[13px] text-slate-600 font-medium">Nenhum exercício adicionado</p>
+            </div>
+          )}
+
+          <button
+            onClick={openAdd}
+            className="w-full h-12 rounded-2xl border-2 border-dashed border-[#56AB2F]/30 text-[#56AB2F] font-bold text-[13px] flex items-center justify-center gap-2 hover:border-[#56AB2F]/60 hover:bg-[#56AB2F]/5 transition-all active:scale-95"
           >
-            {/* Focus of the Day Input */}
-            <div className="w-full bg-[#0D131A] p-5 rounded-[24px] border border-white/[0.03] flex flex-col items-center">
-              <label className="text-[13px] font-medium text-[#56AB2F] uppercase tracking-wider mb-3 opacity-80">
-                Foco do Dia
-              </label>
-              <div className="relative w-full max-w-[280px]">
-                <input 
-                  type="text" 
-                  value={workoutData[activeTab].muscles}
-                  onChange={(e) => handleMusclesChange(e.target.value)}
-                  placeholder="Ex: Peito e Tríceps"
-                  className="w-full h-11 bg-white/[0.03] px-4 rounded-xl text-[14px] font-medium border border-white/[0.05] focus:border-[#56AB2F]/40 outline-none text-center transition-all placeholder:text-slate-700"
-                />
-              </div>
-            </div>
+            <Plus className="w-4 h-4" />
+            Adicionar Exercício
+          </button>
+        </section>
 
-            {/* Exercises List */}
-            <div className="w-full">
-               <div className="flex flex-col items-center mb-5 text-center">
-                 <h3 className="text-[16px] font-bold">Cronograma</h3>
-                 <p className="text-[13px] font-medium text-slate-500 uppercase tracking-widest mt-0.5">Sessão de {activeTab.split('-')[0]}</p>
-                 
-                 <div className="mt-2 bg-[#56AB2F]/10 px-2 py-0.5 rounded-lg border border-[#56AB2F]/20">
-                   <span className="text-[11px] font-bold text-[#56AB2F]">
-                     {workoutData[activeTab].exercises.length} EXERCÍCIOS
-                   </span>
-                 </div>
-               </div>
+      </div>
 
-               <div className="space-y-3">
-                 {workoutData[activeTab].exercises.length > 0 ? (
-                   <AnimatePresence mode="popLayout">
-                     {workoutData[activeTab].exercises.map((ex) => (
-                       <motion.div 
-                        key={ex.id}
-                        initial={{ opacity: 0, y: 8 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, scale: 0.95 }}
-                        className="p-4 bg-white/[0.02] rounded-[20px] border border-white/[0.04] flex items-center justify-between group"
-                       >
-                         <div className="flex-1">
-                           <h4 className="text-[15px] font-bold mb-2 group-hover:text-[#56AB2F] transition-colors">{ex.name}</h4>
-                           <div className="flex gap-2">
-                             <div className="flex items-center gap-1.5 bg-white/[0.03] px-2 py-0.5 rounded-md border border-white/[0.05]">
-                               <RotateCcw className="w-3 h-3 text-[#56AB2F]" />
-                               <span className="text-[11px] font-medium text-slate-400">{ex.sets}s</span>
-                             </div>
-                             <div className="flex items-center gap-1.5 bg-white/[0.03] px-2 py-0.5 rounded-md border border-white/[0.05]">
-                               <Dumbbell className="w-3 h-3 text-[#56AB2F]" />
-                               <span className="text-[11px] font-medium text-slate-400">{ex.reps}r</span>
-                             </div>
-                             {ex.rest && (
-                               <div className="flex items-center gap-1.5 bg-white/[0.03] px-2 py-0.5 rounded-md border border-white/[0.05]">
-                                 <Clock className="w-3 h-3 text-[#56AB2F]" />
-                                 <span className="text-[11px] font-medium text-slate-400">{ex.rest}</span>
-                               </div>
-                             )}
-                           </div>
-                         </div>
-                         <div className="flex gap-2 ml-3">
-                           <button onClick={() => openEditModal(ex)} className="p-2 bg-white/[0.03] rounded-lg text-slate-500"><Edit2 className="w-3.5 h-3.5" /></button>
-                           <button onClick={() => handleDeleteExercise(ex.id)} className="p-2 bg-red-500/[0.02] rounded-lg text-slate-700 hover:text-red-500"><Trash2 className="w-3.5 h-3.5" /></button>
-                         </div>
-                       </motion.div>
-                     ))}
-                   </AnimatePresence>
-                 ) : (
-                   <div className="py-10 text-center bg-white/[0.01] border border-dashed border-white/[0.05] rounded-[30px] flex flex-col items-center">
-                     <p className="text-[13px] font-medium text-slate-600 mb-4 tracking-wide uppercase">Nenhum exercício para {activeTab.split('-')[0]}</p>
-                     <button 
-                      onClick={openAddModal}
-                      className="px-6 py-3 bg-[#56AB2F]/10 text-[#56AB2F] rounded-xl font-bold text-[13px] border border-[#56AB2F]/20 active:scale-95"
-                     >
-                       Adicionar Primeiro
-                     </button>
-                   </div>
-                 )}
-               </div>
-
-               <button 
-                 onClick={openAddModal}
-                 className="w-full mt-6 h-12 bg-white/[0.02] border border-dashed border-[#56AB2F]/30 rounded-xl text-[#56AB2F] font-bold text-[13px] flex items-center justify-center gap-2 hover:bg-[#56AB2F]/5 transition-all"
-               >
-                 <Plus className="w-4 h-4" />
-                 ADICIONAR EXERCÍCIO
-               </button>
-            </div>
-          </motion.div>
+      {/* ── Botão Salvar ── */}
+      <div className="fixed bottom-0 left-0 right-0 z-40">
+        <div className="max-w-md mx-auto px-5 pb-6 pt-4 bg-gradient-to-t from-[#0A0F14] via-[#0A0F14]/95 to-transparent">
+          <button
+            onClick={handleSave}
+            disabled={isSaving}
+            className="w-full h-[52px] bg-[#56AB2F] text-white rounded-2xl font-bold text-[15px] flex items-center justify-center gap-2 shadow-xl shadow-[#56AB2F]/20 active:scale-95 transition-all disabled:opacity-50"
+          >
+            {isSaving
+              ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              : <><Save className="w-5 h-5" /> Salvar Treino</>
+            }
+          </button>
         </div>
       </div>
 
-      {/* Floating Save Button - Adjusted to 80% */}
-      <div className="fixed bottom-0 left-0 right-0 p-5 z-50 flex justify-center">
-        <div className="absolute inset-0 bg-gradient-to-t from-[#0A0F14] via-[#0A0F14]/90 to-transparent -z-10 h-[120%] -translate-y-1/2" />
-        <button 
-          onClick={handleFinalSave}
-          disabled={isSaving}
-          className={`h-12 w-[80%] max-w-[320px] rounded-xl font-bold text-[15px] flex items-center justify-center gap-2 shadow-2xl transition-all ${
-            isSaving 
-            ? 'bg-slate-900 text-slate-700 border border-white/[0.05]' 
-            : 'bg-[#56AB2F] text-white active:scale-95 shadow-[#56AB2F]/20'
-          }`}
-        >
-          {isSaving ? <RotateCcw className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
-          {isSaving ? 'SALVANDO...' : 'SALVAR PLANO'}
-        </button>
-      </div>
-
-      {/* Compact Exercise Modal */}
+      {/* ── Bottom Sheet: Adicionar/Editar Exercício ── */}
       <AnimatePresence>
-        {isModalOpen && (
-          <div className="fixed inset-0 z-[60] flex items-center items-center justify-center p-5">
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setIsModalOpen(false)} className="absolute inset-0 bg-[#04080C]/90 backdrop-blur-md" />
-            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="bg-[#0D131A] w-full max-w-sm rounded-[32px] p-8 relative border border-white/5 shadow-2xl">
-              <div className="flex justify-between items-center mb-6">
-                <h3 className="text-[18px] font-bold">{editingExerciseId ? 'Editar' : 'Novo'} Exercício</h3>
-                <button onClick={() => setIsModalOpen(false)} className="p-2 bg-white/5 rounded-xl"><X className="w-5 h-5" /></button>
+        {sheetOpen && (
+          <>
+            <motion.div
+              key="overlay"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setSheetOpen(false)}
+              className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50"
+            />
+            <motion.div
+              key="sheet"
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={{ type: 'spring', damping: 28, stiffness: 280 }}
+              className="fixed bottom-0 left-0 right-0 z-50 bg-[#0D131A] rounded-t-[28px] border-t border-white/10 p-6 pb-10"
+            >
+              {/* Handle */}
+              <div className="w-10 h-1 bg-white/15 rounded-full mx-auto mb-5" />
+
+              <div className="flex items-center justify-between mb-5">
+                <h3 className="text-[17px] font-bold">{editingId ? 'Editar' : 'Novo'} Exercício</h3>
+                <button onClick={() => setSheetOpen(false)} className="w-8 h-8 rounded-xl bg-white/5 flex items-center justify-center">
+                  <X className="w-4 h-4 text-slate-400" />
+                </button>
               </div>
 
               <div className="space-y-5">
+                {/* Nome */}
                 <div className="space-y-2">
-                  <label className="text-[13px] font-medium text-[#56AB2F] ml-1">Nome</label>
-                  <input type="text" value={exerciseForm.name} onChange={e => setExerciseForm({...exerciseForm, name: e.target.value})} placeholder="Supino Reto..." className="w-full h-11 bg-white/[0.03] px-4 rounded-xl text-[14px] font-medium border border-white/10 outline-none focus:border-[#56AB2F]/50" />
+                  <label className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Nome</label>
+                  <input
+                    type="text"
+                    value={exForm.name}
+                    onChange={e => setExForm({ ...exForm, name: e.target.value })}
+                    placeholder="Ex: Supino Reto"
+                    autoFocus
+                    className="w-full h-12 bg-white/5 rounded-xl px-4 text-[15px] font-medium border border-white/10 outline-none focus:border-[#56AB2F]/50 transition-all placeholder:text-slate-700"
+                  />
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <label className="text-[13px] font-medium text-[#56AB2F] ml-1">Séries</label>
-                    <input type="text" value={exerciseForm.sets} onChange={e => setExerciseForm({...exerciseForm, sets: e.target.value})} placeholder="4" className="w-full h-11 bg-white/[0.03] px-4 rounded-xl text-[14px] font-medium border border-white/10 outline-none text-center focus:border-[#56AB2F]/50" />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-[13px] font-medium text-[#56AB2F] ml-1">Reps</label>
-                    <input type="text" value={exerciseForm.reps} onChange={e => setExerciseForm({...exerciseForm, reps: e.target.value})} placeholder="12" className="w-full h-11 bg-white/[0.03] px-4 rounded-xl text-[14px] font-medium border border-white/10 outline-none text-center focus:border-[#56AB2F]/50" />
-                  </div>
-                </div>
-
+                {/* Séries */}
                 <div className="space-y-2">
-                  <label className="text-[13px] font-medium text-[#56AB2F] ml-1">Descanso</label>
-                  <input type="text" value={exerciseForm.rest} onChange={e => setExerciseForm({...exerciseForm, rest: e.target.value})} placeholder="60s" className="w-full h-11 bg-white/[0.03] px-4 rounded-xl text-[14px] font-medium border border-white/10 outline-none focus:border-[#56AB2F]/50" />
+                  <label className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Séries</label>
+                  <div className="flex gap-2">
+                    {SETS_OPTIONS.map(s => (
+                      <button
+                        key={s}
+                        onClick={() => setExForm({ ...exForm, sets: s })}
+                        className={`flex-1 h-10 rounded-xl text-[14px] font-bold transition-all active:scale-90 ${
+                          exForm.sets === s
+                            ? 'bg-[#56AB2F] text-white'
+                            : 'bg-white/5 text-slate-400 border border-white/10'
+                        }`}
+                      >
+                        {s}
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
-                <button onClick={handleSaveExercise} className="w-full h-12 bg-[#56AB2F] text-white rounded-xl font-bold text-[15px] shadow-lg shadow-[#56AB2F]/20 active:scale-95 transition-all mt-4">
+                {/* Repetições */}
+                <div className="space-y-2">
+                  <label className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Repetições</label>
+                  <div className="flex gap-2">
+                    {REPS_OPTIONS.map(r => (
+                      <button
+                        key={r}
+                        onClick={() => setExForm({ ...exForm, reps: r })}
+                        className={`flex-1 h-10 rounded-xl text-[13px] font-bold transition-all active:scale-90 ${
+                          exForm.reps === r
+                            ? 'bg-[#56AB2F] text-white'
+                            : 'bg-white/5 text-slate-400 border border-white/10'
+                        }`}
+                      >
+                        {r}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Descanso */}
+                <div className="space-y-2">
+                  <label className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Descanso</label>
+                  <div className="flex gap-2">
+                    {REST_OPTIONS.map(r => (
+                      <button
+                        key={r}
+                        onClick={() => setExForm({ ...exForm, rest: r })}
+                        className={`flex-1 h-10 rounded-xl text-[12px] font-bold transition-all active:scale-90 ${
+                          exForm.rest === r
+                            ? 'bg-[#56AB2F] text-white'
+                            : 'bg-white/5 text-slate-400 border border-white/10'
+                        }`}
+                      >
+                        {r}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <button
+                  onClick={confirmExercise}
+                  className="w-full h-12 bg-[#56AB2F] text-white rounded-xl font-bold text-[15px] flex items-center justify-center gap-2 shadow-lg shadow-[#56AB2F]/20 active:scale-95 transition-all"
+                >
+                  <Check className="w-5 h-5" />
                   Confirmar
                 </button>
               </div>
             </motion.div>
-          </div>
+          </>
         )}
       </AnimatePresence>
     </div>

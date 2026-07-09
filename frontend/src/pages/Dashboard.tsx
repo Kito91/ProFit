@@ -216,7 +216,7 @@ const SummaryCard = ({ total, target, summary, meals, weeklyData, dailyTotals }:
 export const Dashboard = () => {
   const navigate = useNavigate();
   const { langData } = useLanguage();
-  const { totalUsersCount } = useAuth();
+  const { totalUsersCount, user } = useAuth();
   const [recentMeals, setRecentMeals] = useState<any[]>([]);
   const [userName, setUserName] = useState(langData.PT ? 'Usuário' : 'User');
   const [userGoal, setUserGoal] = useState('');
@@ -244,6 +244,15 @@ export const Dashboard = () => {
   const [appStatus, setAppStatus] = useState({ totalUsers: 0, monetizationEnabled: false });
   const [showMilestone, setShowMilestone] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [trialDaysLeft, setTrialDaysLeft] = useState<number | null>(null);
+  const [isTrial, setIsTrial] = useState(false);
+
+  useEffect(() => {
+    api.subscription.getStatus().then((s: any) => {
+      setIsTrial(s?.is_trial ?? false);
+      setTrialDaysLeft(typeof s?.trial_days_left === 'number' ? s.trial_days_left : null);
+    }).catch(() => {});
+  }, []);
 
   useEffect(() => {
     const fetchStatus = async () => {
@@ -825,9 +834,62 @@ export const Dashboard = () => {
         {/* Banner de Plano/Pagamento */}
         {(() => {
           const isPro = profile?.subscription_status === 'ativo' && (profile?.plan === 'pro' || profile?.plan === 'premium');
-          
-          // Se não for Pro ou estiver inativo, mostra banner para assinar/renovar
-          if (!isPro && !profile?.is_influencer) {
+          const isInfluencer = profile?.is_influencer;
+
+          // ── Free trial countdown ──────────────────────────────────────────
+          const FREE_TRIAL_DAYS = 3;
+          const createdAt = user?.created_at ? new Date(user.created_at) : null;
+          const localDaysUsed = createdAt
+            ? Math.floor((Date.now() - createdAt.getTime()) / 86_400_000)
+            : FREE_TRIAL_DAYS;
+          const daysLeft = trialDaysLeft !== null
+            ? trialDaysLeft
+            : Math.max(0, FREE_TRIAL_DAYS - localDaysUsed);
+          const daysUsed = Math.max(0, FREE_TRIAL_DAYS - daysLeft);
+          const isOnFreeTrial = (trialDaysLeft !== null ? isTrial : daysLeft > 0) && daysLeft > 0 && !isPro && !isInfluencer;
+
+          if (isOnFreeTrial) {
+            const barPct = Math.min(100, (daysUsed / FREE_TRIAL_DAYS) * 100);
+            return (
+              <motion.div
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4 }}
+                className="mb-6 rounded-3xl p-4 bg-amber-500/10 border border-amber-500/20 cursor-pointer active:scale-[0.98] transition-all"
+                onClick={() => navigate('/plans')}
+              >
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="w-9 h-9 rounded-2xl bg-amber-500/20 flex items-center justify-center flex-shrink-0">
+                    <Clock className="w-4 h-4 text-amber-400" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[13px] font-bold text-amber-400 leading-tight">
+                      Teste gratuito — {daysLeft} dia{daysLeft !== 1 ? 's' : ''} restante{daysLeft !== 1 ? 's' : ''}
+                    </p>
+                    <p className="text-[11px] text-slate-500 mt-0.5">Assine o Pro para manter o acesso</p>
+                  </div>
+                  <span className="text-[11px] font-black text-amber-400 bg-amber-500/15 px-2.5 py-1 rounded-full whitespace-nowrap flex-shrink-0">
+                    Ver Planos
+                  </span>
+                </div>
+                <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
+                  <motion.div
+                    initial={{ width: 0 }}
+                    animate={{ width: `${barPct}%` }}
+                    transition={{ duration: 0.8, ease: 'easeOut' }}
+                    className="h-full bg-amber-400 rounded-full"
+                  />
+                </div>
+                <div className="flex justify-between mt-1">
+                  <span className="text-[9px] text-slate-600">Dia 1</span>
+                  <span className="text-[9px] text-slate-600">Dia {FREE_TRIAL_DAYS}</span>
+                </div>
+              </motion.div>
+            );
+          }
+
+          // ── Not Pro (trial expired or never started) ──────────────────────
+          if (!isPro && !isInfluencer) {
             return (
               <div className="mb-8">
                 <PremiumBanner onUpgrade={() => navigate('/plans')} />
@@ -835,30 +897,31 @@ export const Dashboard = () => {
             );
           }
 
-          // Se for Pro, verifica expiração próxima
+          // ── Pro with expiration soon ──────────────────────────────────────
           if (isPro && profile?.plan_expiration) {
-            const expDate = getMaputoNow().tz('UTC').set('date', new Date(profile.plan_expiration).getDate()).toDate(); // Fix comparison
-            const today = getMaputoNow().toDate();
-            const diffDays = Math.ceil((expDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+            const expDate = new Date(profile.plan_expiration);
+            const diffDays = Math.ceil((expDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
 
             if (diffDays <= 3 && diffDays > 0) {
               return (
-                <motion.div 
+                <motion.div
                   initial={{ opacity: 0, y: -20 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="mb-8 bg-amber-50 border border-amber-200 rounded-[32px] p-6 flex items-center justify-between"
+                  className="mb-8 rounded-3xl p-4 bg-amber-500/10 border border-amber-500/20 flex items-center justify-between cursor-pointer active:scale-[0.98] transition-all"
                   onClick={() => navigate('/plans')}
                 >
-                  <div className="flex items-center space-x-4">
-                    <div className="w-12 h-12 bg-amber-100 rounded-2xl flex items-center justify-center text-amber-600">
-                      <AlertCircle size={24} />
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-amber-500/20 rounded-2xl flex items-center justify-center">
+                      <AlertCircle size={20} className="text-amber-400" />
                     </div>
                     <div>
-                      <h4 className="font-black text-amber-900 leading-tight">{langData.dash_plan_expires_in} {diffDays} {diffDays === 1 ? langData.dash_day : langData.dash_days}</h4>
-                      <p className="text-amber-700/80 text-xs font-bold uppercase tracking-wider mt-0.5">{langData.dash_renew_now}</p>
+                      <p className="font-bold text-amber-400 text-[14px] leading-tight">
+                        {langData.dash_plan_expires_in} {diffDays} {diffDays === 1 ? langData.dash_day : langData.dash_days}
+                      </p>
+                      <p className="text-[11px] text-slate-500 uppercase tracking-wider font-bold mt-0.5">{langData.dash_renew_now}</p>
                     </div>
                   </div>
-                  <ChevronRight size={20} className="text-amber-400" />
+                  <ChevronRight size={18} className="text-amber-400 flex-shrink-0" />
                 </motion.div>
               );
             }

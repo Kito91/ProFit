@@ -81,5 +81,28 @@ const isAdmin = (req, res, next) => {
   }
 };
 
+const optionalAuth = (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return next();
+  const token = authHeader.split(' ')[1];
+  jwt.verify(token, getKey, async (err, decoded) => {
+    if (err) return next();
+    const userId = decoded.id || decoded.sub;
+    req.user = { ...decoded, id: userId };
+    try {
+      const userResult = await db.query('SELECT email, role, plan FROM users WHERE id = $1', [userId]);
+      if (userResult.rows.length > 0) {
+        req.user.email = userResult.rows[0].email;
+        req.user.role = userResult.rows[0].role;
+        req.user.plan = userResult.rows[0].plan;
+      }
+    } catch (dbErr) {
+      console.error('optionalAuth DB error:', dbErr);
+    }
+    next();
+  });
+};
+
 module.exports = authenticateToken;
 module.exports.isAdmin = isAdmin;
+module.exports.optionalAuth = optionalAuth;

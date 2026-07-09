@@ -62,13 +62,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isAuthenticated, setIsAuthenticated] = useState(!!localStorage.getItem('token'));
   const [totalUsersCount, setTotalUsersCount] = useState(0);
 
-  const refreshUser = async () => {
+  const normalizeApiError = (error: any) => {
+    if (!error) return { status: null, message: 'Unknown error' };
+    if (typeof error === 'string') return { status: null, message: error };
+    const message = error?.message || error?.error || error?.data?.message || error?.response?.data?.message || error?.response?.message || 'Unknown error';
+    const status = error?.status ?? error?.response?.status ?? null;
+    return { status, message };
+  };
+
+  const refreshUser = async (): Promise<User | null> => {
     const currentToken = localStorage.getItem('token');
     if (!currentToken) {
       setUser(null);
       setIsAuthenticated(false);
       setIsLoading(false);
-      return;
+      return null;
     }
 
     try {
@@ -77,12 +85,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setIsAuthenticated(true);
       // Store user safely
       localStorage.setItem('user', JSON.stringify(profileData));
+      return profileData;
     } catch (error: any) {
-      console.error('Session invalid:', error);
+      const normalized = normalizeApiError(error);
+      console.error('Session invalid:', normalized);
       // If it's a 404 or 401, we MUST logout
-      if (error.status === 401 || error.status === 403 || error.status === 404) {
+      if (normalized.status === 401 || normalized.status === 403 || normalized.status === 404) {
         logout();
       }
+      return null;
     } finally {
       setIsLoading(false);
     }
@@ -136,20 +147,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (data.token) {
         localStorage.setItem('token', data.token);
         setToken(data.token);
-        
-        // Set user immediately from login response to avoid "processing" hang
-        if (data.user) {
-          setUser(data.user);
-          localStorage.setItem('user', JSON.stringify(data.user));
-          setIsAuthenticated(true);
+
+        let currentUser = data.user as User | undefined;
+        if (!currentUser) {
+          currentUser = await refreshUser();
         }
 
-        // Start background refresh to get full profile details (bootstrap) but don't block
-        refreshUser().catch(e => console.warn('Background refresh failed:', e));
-        
-        return data.user;
+        if (currentUser) {
+          setUser(currentUser);
+          localStorage.setItem('user', JSON.stringify(currentUser));
+          setIsAuthenticated(true);
+          return currentUser;
+        }
+
+        throw { status: null, message: 'Não foi possível recuperar os dados do usuário após o login.' };
       }
-      throw new Error('Login failed');
+      throw { status: null, message: 'Login failed' };
+    } catch (error: any) {
+      const normalized = normalizeApiError(error);
+      throw normalized;
     } finally {
       setAuthLoading(false);
     }

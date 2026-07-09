@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/LENOVO/Music/ProFit/**)",
+      "PowerShell(Get-ChildItem \"C:\\\\Users\\\\LENOVO\\\\Music\\\\ProFit\\\\frontend\\\\src\" -Force -Recurse | Where-Object { !$_.PSIsContainer } | Select-Object FullName | Format-Table -AutoSize)",
+      "Bash(npx tsc *)",
+      "Bash(xargs grep -l \"workout\" -i)",
+      "Bash(node -e \"const db=require\\('./config/database'\\); db.query\\('SELECT column_name FROM information_schema.columns WHERE table_name=\\\\'users\\\\' ORDER BY ordinal_position'\\).then\\(r=>{console.log\\(r.rows.map\\(x=>x.column_name\\).join\\(', '\\)\\); process.exit\\(\\)}\\).catch\\(e=>{console.error\\(e.message\\); process.exit\\(1\\)}\\)\")"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\LENOVO\\Music\\ProFit\\backend\\middleware",
+      "C:\\Users\\LENOVO\\Music\\ProFit\\backend\\controllers",
+      "C:\\Users\\LENOVO\\Music\\ProFit\\backend\\routes"
+    ]
+  }
+}

@@ -6,27 +6,50 @@
   --primary: #22C55E;
   --primary-light: #4ADE80;
   --accent-gradient: linear-gradient(135deg, #16A34A 0%, #22C55E 100%);
-  
-  /* Unified Premium Dark Theme */
-  --bg-app: #0F172A;
-  --bg-gradient: radial-gradient(circle at top right, #1E293B 0%, #0F172A 70%);
-  --bg-container: #0F172A;
-  --bg-card: #1E293B;
-  --bg-surface: #1E293B;
-  --bg-input: #0F172A;
-  --bg-accent-soft: rgba(34, 197, 94, 0.1);
-  --bg-orange-soft: rgba(34, 197, 94, 0.1);
-  --bg-blue-soft: rgba(30, 41, 59, 0.5);
-  --bg-purple-soft: rgba(30, 41, 59, 0.5);
-  --bg-red-soft: rgba(239, 68, 68, 0.1);
-  --bg-skeleton: #1E293B;
-  --text-main: #FFFFFF;
-  --text-muted: #9CA3AF;
-  --text-inverse: #0F172A;
-  --border-main: rgba(255, 255, 255, 0.05);
-  --shadow-main: 0 10px 40px rgba(0,0,0,0.4);
-  --glass-bg: rgba(30, 41, 59, 0.7);
-  --glass-border: rgba(255, 255, 255, 0.1);
+
+  /* Backgrounds */
+  --bg-app: #0A0F14;
+  --bg-gradient: radial-gradient(circle at top right, #111827 0%, #0A0F14 70%);
+  --bg-container: #0A0F14;
+  --bg-card: #111827;
+  --bg-surface: #111827;
+  --bg-input: #0A0F14;
+  --bg-skeleton: #111827;
+
+  /* Semantic soft backgrounds */
+  --bg-green-soft:  rgba(34,  197, 94,  0.10);
+  --bg-orange-soft: rgba(249, 115, 22,  0.10);
+  --bg-blue-soft:   rgba(59,  130, 246, 0.10);
+  --bg-purple-soft: rgba(139, 92,  246, 0.10);
+  --bg-red-soft:    rgba(239, 68,  68,  0.10);
+  --bg-yellow-soft: rgba(234, 179, 8,   0.10);
+  /* Legacy alias kept for compatibility */
+  --bg-accent-soft: rgba(34, 197, 94, 0.10);
+
+  /* Text */
+  --text-main:    #FFFFFF;
+  --text-muted:   #6B7280;
+  --text-subtle:  #374151;
+  --text-inverse: #0A0F14;
+
+  /* Borders & effects */
+  --border-main:   rgba(255, 255, 255, 0.06);
+  --border-strong: rgba(255, 255, 255, 0.12);
+  --shadow-main:   0 8px 32px rgba(0, 0, 0, 0.5);
+  --shadow-card:   0 2px 12px rgba(0, 0, 0, 0.3);
+  --glass-bg:      rgba(17, 24, 39, 0.80);
+  --glass-border:  rgba(255, 255, 255, 0.08);
+
+  /* Spacing scale */
+  --space-page-x: 1.25rem;   /* 20px — horizontal page padding */
+  --space-section: 1.5rem;   /* 24px — between sections */
+
+  /* Radius scale */
+  --radius-sm:  0.75rem;   /* 12px — tags, badges */
+  --radius-md:  1rem;      /* 16px — inline cards */
+  --radius-lg:  1.25rem;   /* 20px — form inputs */
+  --radius-xl:  1.5rem;    /* 24px — secondary cards */
+  --radius-2xl: 2rem;      /* 32px — primary cards */
 }
 
 * {
@@ -85,43 +108,98 @@ body {
 }
 
 @layer components {
+  /* ── Layout shells ──────────────────────────────────────────────────────── */
   .main-wrapper {
     @apply w-full flex justify-center items-start min-h-screen overflow-x-hidden p-0;
   }
 
   .app-container {
-    @apply w-full min-h-screen bg-transparent relative mx-auto box-border shadow-none md:max-w-4xl md:my-8 md:rounded-[40px] md:min-h-[90vh] lg:max-w-6xl;
+    @apply w-full min-h-screen bg-transparent relative mx-auto box-border shadow-none md:max-w-xl md:my-8 md:rounded-[40px] md:min-h-[90vh];
     background-color: var(--bg-container);
     border-left: 1px solid var(--border-main);
     border-right: 1px solid var(--border-main);
   }
-  
-  .card-premium {
-    @apply rounded-[32px] p-6 transition-all duration-500 hover:-translate-y-1;
-    background-color: var(--bg-card);
-    box-shadow: var(--shadow-main);
-    border: 1px solid var(--border-main);
-  }
-  
-  .btn-primary {
-    @apply text-white font-bold py-5 px-8 rounded-[24px] shadow-lg active:scale-95 transition-all duration-300 text-center flex items-center justify-center space-x-2;
-    background: var(--accent-gradient);
-    box-shadow: 0 10px 20px -10px rgba(86, 171, 47, 0.5);
+
+  /* ── Page structure ─────────────────────────────────────────────────────── */
+
+  /* Sticky page header bar */
+  .page-header {
+    @apply sticky top-0 z-40 px-5 h-[60px] flex items-center gap-3;
+    background-color: color-mix(in srgb, var(--bg-app) 92%, transparent);
+    backdrop-filter: blur(20px);
+    border-bottom: 1px solid var(--border-main);
   }
 
-  .btn-secondary {
-    @apply font-bold py-5 px-8 rounded-[24px] active:scale-95 transition-all duration-300 text-center flex items-center justify-center space-x-2;
+  /* Standard section label above a group */
+  .section-label {
+    @apply text-[11px] font-bold uppercase tracking-widest;
+    color: var(--text-muted);
+  }
+
+  /* ── Cards ──────────────────────────────────────────────────────────────── */
+
+  /* Primary card — main content blocks */
+  .card-premium {
+    @apply rounded-[var(--radius-2xl)] p-5 transition-all duration-300;
     background-color: var(--bg-card);
-    color: var(--text-main);
+    box-shadow: var(--shadow-card);
     border: 1px solid var(--border-main);
   }
+
+  /* Secondary card — inner / nested blocks */
+  .card-secondary {
+    @apply rounded-[var(--radius-xl)] p-4;
+    background-color: rgba(255,255,255,0.03);
+    border: 1px solid var(--border-main);
+  }
+
+  /* ── Buttons ────────────────────────────────────────────────────────────── */
+
+  /* Full-width primary action */
+  .btn-primary {
+    @apply w-full h-[52px] text-white font-bold text-[15px] rounded-[var(--radius-xl)]
+           shadow-lg active:scale-95 transition-all duration-200
+           flex items-center justify-center gap-2;
+    background: var(--accent-gradient);
+    box-shadow: 0 8px 20px -8px rgba(34, 197, 94, 0.45);
+  }
+
+  /* Full-width secondary action */
+  .btn-secondary {
+    @apply w-full h-[52px] font-bold text-[15px] rounded-[var(--radius-xl)]
+           active:scale-95 transition-all duration-200
+           flex items-center justify-center gap-2;
+    background-color: var(--bg-card);
+    color: var(--text-main);
+    border: 1px solid var(--border-strong);
+  }
+
+  /* Compact / icon button */
+  .btn-icon {
+    @apply w-10 h-10 rounded-[var(--radius-md)] flex items-center justify-center
+           transition-all active:scale-90;
+    background-color: rgba(255,255,255,0.05);
+    border: 1px solid var(--border-main);
+    color: var(--text-muted);
+  }
+
+  /* ── Inputs ─────────────────────────────────────────────────────────────── */
 
   .input-premium {
-    @apply w-full rounded-[20px] p-5 focus:ring-2 focus:ring-primary-light focus:border-primary-light outline-none transition-all shadow-sm shadow-black/5 placeholder:text-gray-300 text-base font-medium;
-    background-color: var(--bg-input);
+    @apply w-full h-[52px] rounded-[var(--radius-lg)] px-4
+           text-[15px] font-medium outline-none transition-all
+           placeholder:text-gray-600;
+    background-color: rgba(255,255,255,0.04);
     color: var(--text-main);
     border: 1px solid var(--border-main);
   }
+
+  .input-premium:focus {
+    border-color: rgba(34, 197, 94, 0.4);
+    background-color: rgba(34, 197, 94, 0.03);
+  }
+
+  /* ── Misc ───────────────────────────────────────────────────────────────── */
 
   .glass-card {
     @apply backdrop-blur-xl border transition-all duration-300;
@@ -130,33 +208,41 @@ body {
   }
 
   .glass-nav {
-    @apply fixed bottom-0 left-0 right-0 max-w-md mx-auto border-t px-8 py-5 flex justify-between items-center z-50 rounded-t-[40px] backdrop-blur-2xl;
+    @apply fixed bottom-0 left-0 right-0 max-w-md mx-auto border-t
+           px-6 py-4 flex justify-between items-center z-50
+           rounded-t-[32px] backdrop-blur-2xl;
     background-color: var(--glass-bg);
     border-color: var(--glass-border);
-    box-shadow: 0 -10px 40px rgba(0,0,0,0.1);
+    box-shadow: 0 -8px 32px rgba(0,0,0,0.2);
   }
 
   .chip-premium {
-    @apply px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all duration-300;
+    @apply px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all;
     background-color: var(--bg-accent-soft);
     color: var(--primary);
-    border: 1px solid rgba(86, 171, 47, 0.1);
+    border: 1px solid rgba(34, 197, 94, 0.12);
   }
 
   .text-premium-gradient {
-    @apply bg-clip-text text-transparent bg-gradient-to-r from-[var(--text-main)] to-[var(--text-muted)];
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-white to-gray-400;
   }
 
   .glow-primary {
-    filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.5));
+    filter: drop-shadow(0 0 6px rgba(34, 197, 94, 0.4));
   }
 
   .plan-badge-pill {
-    @apply px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest transition-all duration-300 flex items-center justify-center self-start;
-    background-color: #000000;
-    color: #FFFFFF;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    @apply px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest
+           flex items-center justify-center self-start;
+    background-color: #000;
+    color: #FFF;
+    border: 1px solid rgba(255,255,255,0.12);
+  }
+
+  /* Divider between list rows */
+  .row-divider {
+    @apply border-b;
+    border-color: var(--border-main);
   }
 }
 

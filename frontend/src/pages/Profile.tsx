@@ -94,7 +94,7 @@ export const Profile = () => {
       className="w-full flex justify-between items-center py-4 bg-[var(--bg-container)] active:scale-[0.98] transition-all last:border-none border-b border-[var(--border-main)] group"
     >
       <div className="flex items-center space-x-4">
-        <div className={`w-10 h-10 rounded-2xl bg-gray-50 flex items-center justify-center ${color} group-hover:bg-gray-100 transition-colors`}>
+        <div className={`w-10 h-10 rounded-2xl bg-white/[0.06] flex items-center justify-center ${color} transition-colors`}>
           <Icon className="w-5 h-5" />
         </div>
         <div className="text-left">
@@ -203,22 +203,22 @@ export const Profile = () => {
           {/* Body Metrics Cards Grid */}
           <div className="grid grid-cols-3 gap-3 mb-8">
             <div className="bg-[var(--bg-container)] rounded-[20px] p-4 shadow-[0_8px_30px_rgb(0,0,0,0.03)] flex flex-col items-center hover:scale-[1.02] transition-transform border border-[var(--border-main)]">
-              <div className="w-7 h-7 rounded-xl bg-blue-50 flex items-center justify-center mb-2">
-                 <Weight className="w-4 h-4 text-blue-500" />
+              <div className="w-8 h-8 rounded-xl bg-blue-500/15 flex items-center justify-center mb-2">
+                 <Weight className="w-4 h-4 text-blue-400" />
               </div>
               <span className="text-[11px] font-bold text-[var(--text-muted)] uppercase tracking-wide mb-1 text-center">{langData.profile_weight}</span>
               <span className="text-[17px] font-black text-[var(--text-main)] leading-none">{profile?.weight ? `${profile.weight} kg` : '--'}</span>
             </div>
             <div className="bg-[var(--bg-container)] rounded-[20px] p-4 shadow-[0_8px_30px_rgb(0,0,0,0.03)] flex flex-col items-center hover:scale-[1.02] transition-transform border border-[var(--border-main)]">
-              <div className="w-7 h-7 rounded-xl bg-orange-50 flex items-center justify-center mb-2">
-                 <Ruler className="w-4 h-4 text-orange-500" />
+              <div className="w-8 h-8 rounded-xl bg-orange-500/15 flex items-center justify-center mb-2">
+                 <Ruler className="w-4 h-4 text-orange-400" />
               </div>
               <span className="text-[11px] font-bold text-[var(--text-muted)] uppercase tracking-wide mb-1 text-center">{langData.profile_height}</span>
               <span className="text-[17px] font-black text-[var(--text-main)] leading-none">{profile?.height ? `${profile.height} cm` : '--'}</span>
             </div>
             <div className="bg-[var(--bg-container)] rounded-[20px] p-4 shadow-[0_8px_30px_rgb(0,0,0,0.03)] flex flex-col items-center hover:scale-[1.02] transition-transform border border-[var(--border-main)]">
-              <div className="w-7 h-7 rounded-xl bg-purple-50 flex items-center justify-center mb-2">
-                 <Calendar className="w-4 h-4 text-purple-500" />
+              <div className="w-8 h-8 rounded-xl bg-purple-500/15 flex items-center justify-center mb-2">
+                 <Calendar className="w-4 h-4 text-purple-400" />
               </div>
               <span className="text-[11px] font-bold text-[var(--text-muted)] uppercase tracking-wide mb-1 text-center">{langData.profile_age}</span>
               <span className="text-[17px] font-black text-[var(--text-main)] leading-none">{profile?.age ? `${profile.age} ${langData.profile_years}` : '--'}</span>
@@ -272,7 +272,7 @@ export const Profile = () => {
           {/* Logout Button */}
           <button 
             onClick={handleLogout}
-            className="w-full flex items-center justify-center space-x-3 py-5 bg-red-50 text-red-500 rounded-[28px] font-black text-sm uppercase tracking-widest active:scale-95 transition-all mb-4 hover:bg-red-100/50"
+            className="w-full flex items-center justify-center space-x-3 py-4 bg-red-500/10 text-red-400 rounded-[24px] font-bold text-[14px] uppercase tracking-widest active:scale-95 transition-all mb-4 border border-red-500/15 hover:bg-red-500/15"
           >
             <LogOut className="w-5 h-5" />
             <span>{langData.profile_logout}</span>

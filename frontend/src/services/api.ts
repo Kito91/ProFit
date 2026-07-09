@@ -1,5 +1,39 @@
-export const API_URL = import.meta.env.VITE_API_URL || 'https://api.myprofittness.com/api';
-export const SOCKET_URL = (import.meta.env.VITE_API_URL || 'https://api.myprofittness.com').replace(/\/api$/, '');
+import axios, { AxiosError } from 'axios';
+
+export const API_URL = 'https://profit.areauflashbrasiltv.com/api';
+export const SOCKET_URL = (import.meta.env.VITE_API_URL || 'https://profit.areauflashbrasiltv.com/').replace(/\/api$/, '');
+
+const http = axios.create({
+  baseURL: API_URL,
+  headers: { 'Content-Type': 'application/json' }
+});
+
+http.interceptors.request.use((config) => {
+  const token = localStorage.getItem('token');
+
+  // Avoid assigning a plain object directly to Axios headers type.
+  config.headers = ({
+    ...(config.headers as any || {}),
+    ...(token ? { Authorization: `Bearer ${token}` } : {})
+  } as any);
+  return config;
+});
+
+const handleAxiosError = (error: unknown) => {
+  if (axios.isAxiosError(error)) {
+    const status = error.response?.status ?? null;
+    const responseData = error.response?.data || {};
+    const message = responseData?.message || responseData?.error || error.message || 'Erro de rede. Verifique sua conexão ou CORS.';
+    throw { status, message };
+  }
+
+  if (error instanceof TypeError || (error as any)?.message?.includes('Failed to fetch')) {
+    throw { status: null, message: (error as any)?.message || 'Erro de rede. Verifique sua conexão ou CORS.' };
+  }
+
+  throw error;
+};
+
 
 /**
  * Retorna o caminho completo da imagem.
@@ -27,10 +61,8 @@ export const getImagePath = (path: string | null | undefined) => {
 
 const getHeaders = (extraHeaders: Record<string, string> = {}) => {
   const token = localStorage.getItem('token');
-  const language = localStorage.getItem('appLanguage') || 'PT';
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
-    'X-User-Language': language,
     ...extraHeaders
   };
   
@@ -39,6 +71,18 @@ const getHeaders = (extraHeaders: Record<string, string> = {}) => {
   }
   
   return headers;
+};
+
+const safeFetch = async (input: RequestInfo, init?: RequestInit) => {
+  try {
+    const response = await fetch(input, init);
+    return await handleResponse(response);
+  } catch (error: any) {
+    if (error instanceof TypeError || error?.message?.includes('Failed to fetch')) {
+      throw { status: null, message: error.message || 'Erro de rede. Verifique sua conexão ou CORS.' };
+    }
+    throw error;
+  }
 };
 
 const handleResponse = async (res: Response) => {
@@ -69,65 +113,61 @@ const handleResponse = async (res: Response) => {
 
 export const api = {
   auth: {
-    register: (name: string, email: string, password: string, referralCode?: string, extraData: any = {}) => fetch(`${API_URL}/auth/register`, {
-      method: 'POST',
-      headers: getHeaders(),
-      body: JSON.stringify({ name, email, password, referralCode, ...extraData })
-    }).then(handleResponse),
+    register: (name: string, email: string, password: string, referralCode?: string, extraData: any = {}) =>
+      http.post('/auth/register', { name, email, password, referralCode, ...extraData })
+        .then(res => res.data)
+        .catch(handleAxiosError),
 
-    login: (email: string, password: string) => fetch(`${API_URL}/auth/login`, {
-      method: 'POST',
-      headers: getHeaders(),
-      body: JSON.stringify({ email, password })
-    }).then(handleResponse),
+    login: (email: string, password: string) =>
+      http.post('/auth/login', { email, password })
+        .then(res => res.data)
+        .catch(handleAxiosError),
 
-    forgotPassword: (email: string) => fetch(`${API_URL}/auth/forgot-password`, {
-      method: 'POST',
-      headers: getHeaders(),
-      body: JSON.stringify({ email })
-    }).then(handleResponse),
+    forgotPassword: (email: string) =>
+      http.post('/auth/forgot-password', { email })
+        .then(res => res.data)
+        .catch(handleAxiosError),
 
-    resetPassword: (payload: any) => fetch(`${API_URL}/auth/reset-password`, {
-      method: 'POST',
-      headers: getHeaders(),
-      body: JSON.stringify(payload)
-    }).then(handleResponse),
+    resetPassword: (payload: any) =>
+      http.post('/auth/reset-password', payload)
+        .then(res => res.data)
+        .catch(handleAxiosError),
 
-    createInvite: (name: string, email: string) => fetch(`${API_URL}/auth/invite/create`, {
-      method: 'POST',
-      headers: getHeaders(),
-      body: JSON.stringify({ name, email })
-    }).then(handleResponse),
+    createInvite: (name: string, email: string) =>
+      http.post('/auth/invite/create', { name, email })
+        .then(res => res.data)
+        .catch(handleAxiosError),
 
-    verifyInvite: (token: string) => fetch(`${API_URL}/auth/invite/${token}`, {
-      headers: getHeaders()
-    }).then(handleResponse),
+    verifyInvite: (token: string) =>
+      http.get(`/auth/invite/${token}`)
+        .then(res => res.data)
+        .catch(handleAxiosError),
 
-    activateInvite: (payload: any) => fetch(`${API_URL}/auth/invite/activate`, {
-      method: 'POST',
-      headers: getHeaders(),
-      body: JSON.stringify(payload)
-    }).then(handleResponse),
+    activateInvite: (payload: any) =>
+      http.post('/auth/invite/activate', payload)
+        .then(res => res.data)
+        .catch(handleAxiosError),
     
-    verify: () => fetch(`${API_URL}/auth/verify`, {
-      method: 'GET',
-      headers: getHeaders()
-    }).then(handleResponse),
+    verify: () =>
+      http.get('/auth/verify')
+        .then(res => res.data)
+        .catch(handleAxiosError),
 
     // Influencer System
-    verifyInfluencerInvite: (token: string) => fetch(`${API_URL}/auth/influencer/verify?token=${token}`, {
-      headers: getHeaders()
-    }).then(handleResponse),
+    verifyInfluencerInvite: (token: string) =>
+      http.get(`/auth/influencer/verify?token=${token}`)
+        .then(res => res.data)
+        .catch(handleAxiosError),
 
-    acceptInfluencerInvite: (payload: any) => fetch(`${API_URL}/auth/influencer/accept`, {
-      method: 'POST',
-      headers: getHeaders(),
-      body: JSON.stringify(payload)
-    }).then(handleResponse),
+    acceptInfluencerInvite: (payload: any) =>
+      http.post('/auth/influencer/accept', payload)
+        .then(res => res.data)
+        .catch(handleAxiosError),
 
-    getPromotionStatus: () => fetch(`${API_URL}/auth/promotion-status`, {
-      headers: getHeaders()
-    }).then(handleResponse)
+    getPromotionStatus: () =>
+      http.get('/auth/promotion-status')
+        .then(res => res.data)
+        .catch(handleAxiosError)
   },
 
   foods: {
@@ -200,10 +240,14 @@ export const api = {
       headers: getHeaders()
     }).then(handleResponse),
     
-    syncLead: (data: { id: string, email?: string, name?: string, responses: any, current_step: number }) => fetch(`${API_URL}/quiz/sync`, {
+    syncLead: (data: { id: string, responses: any, current_step: number, is_completed?: boolean }) => fetch(`${API_URL}/quiz/sync`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getHeaders(),
       body: JSON.stringify(data)
+    }).then(handleResponse),
+
+    getSync: async () => fetch(`${API_URL}/quiz/sync`, {
+      headers: getHeaders()
     }).then(handleResponse)
   },
 
@@ -352,7 +396,27 @@ export const api = {
       method: 'POST',
       headers: getHeaders(),
       body: JSON.stringify({ subscription, device_type })
-    }).then(handleResponse)
+    }).then(handleResponse),
+
+    getHistory: () => fetch(`${API_URL}/notifications/history`, {
+      headers: getHeaders()
+    }).then(handleResponse),
+
+    getSettings: () => fetch(`${API_URL}/notifications/settings`, {
+      headers: getHeaders()
+    }).then(handleResponse),
+
+    updateSettings: (data: { notification_time?: string; [key: string]: any }) =>
+      fetch(`${API_URL}/notifications/settings`, {
+        method: 'PUT',
+        headers: getHeaders(),
+        body: JSON.stringify(data)
+      }).then(handleResponse),
+
+    removeDevice: () => fetch(`${API_URL}/notifications/device`, {
+      method: 'DELETE',
+      headers: getHeaders()
+    }).then(handleResponse),
   },
   workouts: {
     generate: (data: any) => {
@@ -665,6 +729,107 @@ export const api = {
       body: JSON.stringify({ conversationId, message })
     }).then(handleResponse)
   },
+  customWorkouts: {
+    list: () => fetch(`${API_URL}/custom-workouts`, {
+      headers: getHeaders()
+    }).then(handleResponse),
+
+    create: (data: { name: string; workout_time?: string; muscle_group?: string; exercises: any[] }) =>
+      fetch(`${API_URL}/custom-workouts`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify(data)
+      }).then(handleResponse),
+
+    get: (id: string) => fetch(`${API_URL}/custom-workouts/${id}`, {
+      headers: getHeaders()
+    }).then(handleResponse),
+
+    update: (id: string, data: any) => fetch(`${API_URL}/custom-workouts/${id}`, {
+      method: 'PUT',
+      headers: getHeaders(),
+      body: JSON.stringify(data)
+    }).then(handleResponse),
+
+    remove: (id: string) => fetch(`${API_URL}/custom-workouts/${id}`, {
+      method: 'DELETE',
+      headers: getHeaders()
+    }).then(handleResponse),
+
+    getByDay: (day: number) => fetch(`${API_URL}/custom-workouts/day/${day}`, {
+      headers: getHeaders()
+    }).then(handleResponse),
+
+    getHistory: (id: string) => fetch(`${API_URL}/custom-workouts/${id}/history`, {
+      headers: getHeaders()
+    }).then(handleResponse),
+
+    addExercise: (id: string, exercise: any) => fetch(`${API_URL}/custom-workouts/${id}/exercises`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(exercise)
+    }).then(handleResponse),
+
+    updateExercise: (id: string, eid: string, data: any) => fetch(`${API_URL}/custom-workouts/${id}/exercises/${eid}`, {
+      method: 'PUT',
+      headers: getHeaders(),
+      body: JSON.stringify(data)
+    }).then(handleResponse),
+
+    removeExercise: (id: string, eid: string) => fetch(`${API_URL}/custom-workouts/${id}/exercises/${eid}`, {
+      method: 'DELETE',
+      headers: getHeaders()
+    }).then(handleResponse),
+  },
+
+  subscription: {
+    getStatus: () => fetch(`${API_URL}/subscription/status`, {
+      headers: getHeaders()
+    }).then(handleResponse),
+
+    activateTrial: () => fetch(`${API_URL}/subscription/trial`, {
+      method: 'POST',
+      headers: getHeaders()
+    }).then(handleResponse),
+
+    activate: (data: { payment_ref?: string; plan?: string }) => fetch(`${API_URL}/subscription/activate`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(data)
+    }).then(handleResponse),
+
+    renew: (data?: any) => fetch(`${API_URL}/subscription/renew`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(data ?? {})
+    }).then(handleResponse),
+
+    cancel: () => fetch(`${API_URL}/subscription/cancel`, {
+      method: 'POST',
+      headers: getHeaders()
+    }).then(handleResponse),
+
+    getHistory: () => fetch(`${API_URL}/subscription/history`, {
+      headers: getHeaders()
+    }).then(handleResponse),
+
+    validate: () => fetch(`${API_URL}/subscription/validate`, {
+      headers: getHeaders()
+    }).then(handleResponse),
+  },
+
+  emailPreferences: {
+    get: () => fetch(`${API_URL}/email-preferences`, {
+      headers: getHeaders()
+    }).then(handleResponse),
+
+    update: (data: Record<string, boolean>) => fetch(`${API_URL}/email-preferences`, {
+      method: 'PUT',
+      headers: getHeaders(),
+      body: JSON.stringify(data)
+    }).then(handleResponse),
+  },
+
   achievements: {
     getMy: () => fetch(`${API_URL}/achievements/my`, {
       headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }

@@ -1,35 +1,29 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, NavLink, Outlet, useLocation } from 'react-router-dom';
-import { 
-  LayoutDashboard, 
-  Users, 
-  Utensils, 
+import {
+  LayoutDashboard,
+  Users,
   LogOut,
   Settings,
   CircleDollarSign,
-  Bell,
-  Sun,
-  Moon,
   Soup,
-  Shield,
   MessageSquare,
   Activity,
   User,
-  Edit,
-  Lock,
   ChevronDown,
   Filter,
-  Ticket
+  Ticket,
+  Brain,
+  BarChart2,
+  Share2
 } from 'lucide-react';
-import { useAdminTheme } from '../../context/AdminThemeContext';
 import { api } from '../../services/api';
 import { AdminProfileModal } from './AdminProfileModal';
 
 const AdminLayout: React.FC = () => {
     const navigate = useNavigate();
     const location = useLocation();
-    const { themeMode, setThemeMode } = useAdminTheme();
-    
+
     // State
     const [user, setUser] = useState<any>(null);
     const [showProfileMenu, setShowProfileMenu] = useState(false);
@@ -89,8 +83,11 @@ const AdminLayout: React.FC = () => {
         { icon: Ticket, label: 'Cupons', path: '/admin/coupons' },
         { icon: Filter, label: 'Funil', path: '/admin/funnel' },
         { icon: MessageSquare, label: 'Comunicação', path: '/admin/notifications' },
-        { icon: Soup, label: 'Pratos', path: '/admin/dishes' },
-        { icon: Activity, label: 'Engajamento', path: '/admin/support' }
+        { icon: Soup,      label: 'Pratos',       path: '/admin/dishes'    },
+        { icon: Activity,  label: 'Engajamento',  path: '/admin/support'   },
+        { icon: Brain,     label: 'Config. IA',   path: '/admin/ai-config' },
+        { icon: BarChart2, label: 'Analytics',    path: '/admin/analytics' },
+        { icon: Share2,    label: 'Social',       path: '/admin/social'    },
     ];
 
     const getBreadcrumb = () => {
@@ -160,16 +157,7 @@ const AdminLayout: React.FC = () => {
                     </div>
 
                     <div className="flex items-center gap-6">
-                        {/* Theme Toggle */}
-                        <button 
-                            onClick={() => setThemeMode(themeMode === 'light' ? 'dark' : 'light')}
-                            className="p-2.5 rounded-xl bg-slate-50 dark:bg-[#334155] text-[#718096] dark:text-slate-400 hover:bg-[#EDF2F7] dark:hover:bg-[#475569] transition-all border border-slate-200 dark:border-slate-700"
-                            title={themeMode === 'light' ? 'Ativar Modo Escuro' : 'Ativar Modo Claro'}
-                        >
-                            {themeMode === 'light' ? <Moon size={20} /> : <Sun size={20} className="text-amber-400" />}
-                        </button>
-
-                        <div className="h-8 w-[1px] bg-[#E6EAF0] dark:bg-[#334155]" />
+                        <div className="h-8 w-[1px] bg-[#334155]" />
 
                         {/* Profile Section */}
                         <div className="profile-container relative">

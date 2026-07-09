@@ -110,7 +110,7 @@ const TypingText = ({ text, className }: { text: string, className?: string }) =
 
 export const Quiz = () => {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
   const { langData, language } = useLanguage();
   const [step, setStep] = useState(1);
   const [stepHistory, setStepHistory] = useState<number[]>([]);
@@ -124,25 +124,71 @@ export const Quiz = () => {
     return newId;
   });
 
-  const syncLead = async (currentStep: number, currentData: any = null) => {
+  const buildRegistrationPayload = (data: any) => ({
+    gender: data.gender,
+    objective: data.objective,
+    height: data.height,
+    weight: data.current_weight,
+    target_weight: data.target_weight,
+    activity_level: data.activity_level,
+    age: data.age,
+    workout_frequency: data.workout_frequency,
+    weight_loss_velocity: data.weight_loss_velocity,
+    obstacles: data.obstacles,
+    goals: data.goals,
+    referral_source: data.referral_source,
+    referral_code: data.referral_code,
+    understands_calories: data.understands_calories,
+  });
+
+  const syncLead = async (currentStep: number, currentData: any = null, isCompleted = false) => {
+    if (!localStorage.getItem('token')) return;
     try {
       const dataToSync = currentData || formData;
       await api.quiz.syncLead({
         id: leadId,
-        email: dataToSync.email,
-        name: dataToSync.name,
-        responses: dataToSync,
-        current_step: currentStep
+        responses: buildRegistrationPayload(dataToSync),
+        current_step: currentStep,
+        is_completed: isCompleted
       });
     } catch (err) {
       console.warn('Lead sync failed', err);
     }
   };
 
-  // Sync initial step & Preload images
+  // Restore quiz state on reload, then sync initial step
   useEffect(() => {
-    syncLead(1);
-    
+    const restoreSync = async () => {
+      try {
+        const data = await api.quiz.getSync();
+        if (data?.lead) {
+          const { responses, current_step, is_completed } = data.lead;
+
+          if (is_completed) {
+            try {
+              await api.user.update({ onboarding_completed: true });
+              await refreshUser();
+            } catch (_) {}
+            navigate('/home');
+            return;
+          }
+
+          if (responses && typeof responses === 'object') {
+            setFormData((prev: any) => ({ ...prev, ...responses }));
+          }
+          if (current_step && Number(current_step) > 1) {
+            setStep(Number(current_step));
+          }
+        }
+      } catch (err) {
+        console.warn('Could not restore quiz sync:', err);
+      } finally {
+        syncLead(step);
+      }
+    };
+
+    restoreSync();
+
     // Preload meal scanner image for Step 25 zero-delay
     const img = new Image();
     img.src = '/fitness_meal_scanner.png';
@@ -198,6 +244,7 @@ export const Quiz = () => {
     referral_source: '',
     name: '',
     email: '',
+    password: '',
     phone: '',
     referral_code: ''
   });
@@ -260,7 +307,7 @@ export const Quiz = () => {
       case 21: return !!formData.activity_level;
       case 28: return !!formData.referral_source;
       case 29: return formData.name?.trim().length > 1;
-      case 30: return formData.email?.includes('@') && formData.email?.includes('.');
+      case 30: return formData.email?.includes('@') && formData.email?.includes('.') && formData.password?.length >= 6;
       case 31: return formData.phone?.trim().length >= 9;
       case 32: return true; // Cupom é opcional (skip)
       case 27: return analysisProgress === 100;
@@ -273,6 +320,32 @@ export const Quiz = () => {
         return val !== '' && val !== null && val !== undefined;
     }
   };
+
+  useEffect(() => {
+    if (user) {
+      setFormData((prev: any) => ({
+        ...prev,
+        name: prev.name || user.name || '',
+        email: prev.email || user.email || '',
+      }));
+    }
+  }, [user?.id]);
+
+  useEffect(() => {
+    const { birth_day, birth_month, birth_year } = formData;
+    if (!birth_day || !birth_month || !birth_year) return;
+    const mesesPT = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
+    const mesesEN = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+    let monthIndex = mesesPT.indexOf(birth_month);
+    if (monthIndex === -1) monthIndex = mesesEN.indexOf(birth_month);
+    if (monthIndex === -1) return;
+    const birthDate = new Date(Number(birth_year), monthIndex, parseInt(String(birth_day)));
+    const today = new Date();
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const m = today.getMonth() - birthDate.getMonth();
+    if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) age--;
+    setFormData((prev: any) => ({ ...prev, age: String(age) }));
+  }, [formData.birth_day, formData.birth_month, formData.birth_year]);
 
   useEffect(() => {
     const fetchGeo = async () => {
@@ -297,89 +370,79 @@ export const Quiz = () => {
   const handleRegistration = async () => {
     if (isRegistering) return;
     setIsRegistering(true);
+
+    const country = geoInfo.country || (selectedCountry.prefix === '+258' ? 'Moçambique' : selectedCountry.prefix === '+27' ? 'África do Sul' : selectedCountry.prefix === '+244' ? 'Angola' : '');
+    const country_code = geoInfo.country_code || (selectedCountry.prefix === '+258' ? 'MZ' : selectedCountry.prefix === '+27' ? 'ZA' : selectedCountry.prefix === '+244' ? 'AO' : '');
+
     try {
-      // Use a default password or empty string for now as it's not in the quiz
-      // The backend should handle this or we can add a step if needed.
-      // For now, following "REGISTRO SERA FEITO PELO QUIZ"
       const res = await api.auth.register(
         formData.name,
         formData.email,
-        'ProFit2024!', // Password padrão para registros via quiz
+        formData.password,
         formData.referral_code,
         {
-          phone: formData.phone,
-          gender: formData.gender,
-          objective: formData.objective,
-          height: formData.height,
-          weight: formData.current_weight,
-          target_weight: formData.target_weight,
-          activity_level: formData.activity_level,
-          onboarding_completed: true,
-          language: localStorage.getItem('appLanguage') || 'PT',
-          country: geoInfo.country || (selectedCountry.prefix === '+258' ? 'Moçambique' : selectedCountry.prefix === '+27' ? 'África do Sul' : selectedCountry.prefix === '+244' ? 'Angola' : ''),
-          country_code: geoInfo.country_code || (selectedCountry.prefix === '+258' ? 'MZ' : selectedCountry.prefix === '+27' ? 'ZA' : selectedCountry.prefix === '+244' ? 'AO' : ''),
+          // Quiz fields (mapped to backend column names)
+          age: formData.age || null,
+          gender: formData.gender || null,
+          weight: formData.current_weight || null,
+          height: formData.height || null,
+          primary_objective: formData.objective || null,
+          activity_level: formData.activity_level || null,
+          target_weight: formData.target_weight || null,
+          understands_calories: formData.understands_calories ?? null,
+          blockers: formData.obstacles || [],
+          // Contact & geo
+          phone: formData.phone || null,
+          country,
+          country_code: geoInfo.country_code || country_code,
           city: geoInfo.city || '',
           ip_address: geoInfo.ip_address || '',
+          // Meta
+          language: localStorage.getItem('appLanguage') || 'PT',
           subscription_plan: selectedPlan,
-          subscription_price: selectedPlan === 'mensal' ? 299 : 2490
+          leadId
         }
       );
-      
+
       if (res.token) {
         localStorage.setItem('token', res.token);
         localStorage.setItem('user', JSON.stringify(res.user));
-        
-        // Registrar dispositivo para notificações se tiver a subscrição
+
         if (pushSubscription) {
-          try {
-            await api.notifications.registerDevice(pushSubscription);
-            console.log('Device registered for push notifications');
-          } catch (pushErr) {
-            console.error('Failed to register device:', pushErr);
-          }
+          api.notifications.registerDevice(pushSubscription).catch(e => console.error('Failed to register device:', e));
         }
 
         window.location.href = '/dashboard';
       }
     } catch (err: any) {
       console.error("Registration failed:", err);
-      // Se o usuário já existe (409 Conflict), tentamos login com a senha padrão
-      if (err.status === 409 || (err.message && err.message.includes('já está registrado'))) {
+      if (err.status === 409 || err.message?.includes('já está registrado')) {
         try {
-          const loginRes = await api.auth.login(formData.email, 'ProFit2024!');
+          const loginRes = await api.auth.login(formData.email, formData.password);
           if (loginRes.token) {
             localStorage.setItem('token', loginRes.token);
             localStorage.setItem('user', JSON.stringify(loginRes.user));
-            // Atualizar perfil com os novos dados do quiz antes de ir para o dashboard
             await api.user.update({
+              primary_objective: formData.objective,
               gender: formData.gender,
-              objective: formData.objective,
-              height: formData.height,
               weight: formData.current_weight,
+              height: formData.height,
               target_weight: formData.target_weight,
               activity_level: formData.activity_level,
               phone: formData.phone,
-              country: geoInfo.country || (selectedCountry.prefix === '+258' ? 'Moçambique' : selectedCountry.prefix === '+27' ? 'África do Sul' : selectedCountry.prefix === '+244' ? 'Angola' : ''),
+              country,
               onboarding_completed: true
             });
-
-            // Registrar dispositivo se tiver subscrição
             if (pushSubscription) {
-              try {
-                await api.notifications.registerDevice(pushSubscription);
-              } catch (pushErr) {
-                console.error('Failed to register device during login fallback:', pushErr);
-              }
+              api.notifications.registerDevice(pushSubscription).catch(e => console.error('Failed to register device:', e));
             }
-
             window.location.href = '/dashboard';
           }
         } catch (loginErr: any) {
-          // Se a senha padrão falhar (401), pedimos a senha personalizada
-          if (loginErr.status === 401 || (loginErr.message && loginErr.message.includes('Senha incorreta'))) {
-             setShowPasswordModal(true);
+          if (loginErr.status === 401 || loginErr.message?.includes('Senha incorreta')) {
+            setShowPasswordModal(true);
           } else {
-             alert(loginErr.message || "Erro ao fazer login");
+            alert(loginErr.message || "Erro ao fazer login");
           }
         }
       } else {
@@ -544,7 +607,7 @@ export const Quiz = () => {
       return;
     }
     if (step === 28) {
-      goToStep(29); // Nome do utilizador
+      goToStep(user ? 32 : 29);
       return;
     }
     if (step === 29) {
@@ -651,10 +714,10 @@ export const Quiz = () => {
       if (step === 36) {
         // Redirecionamento Final para Checkout
         console.log("Onboarding finalizado, salvando dados...");
-        
-        // Persistir dados do Quiz para recuperação na página de Senha
+
+        await syncLead(36, null, true);
         localStorage.setItem('pending_quiz_data', JSON.stringify(formData));
-        
+
         if (isFreePromoActive) {
           console.log("[Quiz] Promo ativa! Pulando checkout...");
           navigate(`/register-password?email=${encodeURIComponent(formData.email)}&name=${encodeURIComponent(formData.name)}&promo=true`);
@@ -731,7 +794,7 @@ export const Quiz = () => {
               ].map(opt => (
                 <button
                   key={opt.id}
-                  onClick={() => updateField('gender', opt.id)}
+                  onClick={() => { updateField('gender', opt.id); setTimeout(() => nextStep(), 300); }}
                   className={`w-full py-5 rounded-[22px] text-lg font-bold transition-all ${
                     formData.gender === opt.id ? 'bg-[#22C55E]/10 border-[#22C55E] text-[#22C55E] shadow-lg shadow-[#22C55E]/10' : 'bg-[var(--bg-card)] text-white hover:bg-white/10 border border-white/5'
                   }`}
@@ -757,7 +820,7 @@ export const Quiz = () => {
               ].map(opt => (
                 <button
                   key={opt.id}
-                  onClick={() => updateField('workout_frequency', opt.id)}
+                  onClick={() => { updateField('workout_frequency', opt.id); setTimeout(() => nextStep(), 300); }}
                   className={`w-full py-4 rounded-[22px] flex flex-col items-center justify-center transition-all ${
                     formData.workout_frequency === opt.id ? 'bg-[#22C55E]/10 border-[#22C55E] text-[#22C55E] shadow-lg shadow-[#22C55E]/10' : 'bg-[var(--bg-card)] text-white hover:bg-white/10 border border-white/5'
                   }`}
@@ -888,7 +951,7 @@ export const Quiz = () => {
                ].map(opt => (
                  <button
                    key={opt.id}
-                   onClick={() => updateField('objective', opt.id)}
+                   onClick={() => { updateField('objective', opt.id); setTimeout(() => nextStep({ field: 'objective', value: opt.id }), 300); }}
                    className={`w-full py-5 rounded-[22px] text-lg font-bold transition-all ${
                      formData.objective === opt.id ? 'bg-[#22C55E]/10 border-[#22C55E] text-[#22C55E] shadow-lg shadow-[#22C55E]/10' : 'bg-[var(--bg-card)] text-white hover:bg-white/10 border border-white/5'
                    }`}
@@ -956,7 +1019,7 @@ export const Quiz = () => {
               ].map(opt => (
                 <button
                   key={opt.id}
-                  onClick={() => updateField('weight_feeling', opt.id)}
+                  onClick={() => { updateField('weight_feeling', opt.id); setTimeout(() => nextStep(), 300); }}
                   className={`w-full py-4 px-6 rounded-[18px] text-left transition-all ${
                     formData.weight_feeling === opt.id ? 'bg-[#22C55E]/10 border-[#22C55E] text-[#22C55E] shadow-lg shadow-[#22C55E]/10' : 'bg-[var(--bg-card)] text-white hover:bg-white/10 border border-white/5'
                   }`}
@@ -1383,21 +1446,21 @@ export const Quiz = () => {
               
               <div className="w-full space-y-3">
                 <button
-                  onClick={() => updateField('understands_calories', true)}
+                  onClick={() => { updateField('understands_calories', true); setTimeout(() => nextStep({ field: 'understands_calories', value: true }), 300); }}
                   className={`w-full py-5 rounded-[22px] font-bold text-lg transition-all ${
-                    formData.understands_calories === true 
-                    ? 'bg-[#22C55E] text-white shadow-lg' 
+                    formData.understands_calories === true
+                    ? 'bg-[#22C55E] text-white shadow-lg'
                     : 'bg-white/5 text-gray-400 active:bg-white/10 border border-white/5'
                   }`}
                 >
                   {langData.quiz_yes}
                 </button>
-                
+
                 <button
-                  onClick={() => updateField('understands_calories', false)}
+                  onClick={() => { updateField('understands_calories', false); setTimeout(() => nextStep({ field: 'understands_calories', value: false }), 300); }}
                   className={`w-full py-5 rounded-[22px] font-bold text-lg transition-all ${
-                    formData.understands_calories === false 
-                    ? 'bg-[#22C55E] text-white shadow-lg' 
+                    formData.understands_calories === false
+                    ? 'bg-[#22C55E] text-white shadow-lg'
                     : 'bg-white/5 text-gray-400 active:bg-white/10 border border-white/5'
                   }`}
                 >
@@ -1554,7 +1617,7 @@ export const Quiz = () => {
                 {activityOptions.map((opt) => (
                   <button
                     key={opt.id}
-                    onClick={() => updateField('activity_level', opt.id)}
+                    onClick={() => { updateField('activity_level', opt.id); setTimeout(() => nextStep(), 300); }}
                     className={`w-full p-4 rounded-[22px] text-left transition-all border-2 ${
                       formData.activity_level === opt.id 
                       ? 'bg-[#22C55E]/10 border-[#22C55E] shadow-[0_0_15px_rgba(34,197,94,0.2)] scale-[1.01]' 
@@ -1926,7 +1989,7 @@ export const Quiz = () => {
                   return (
                     <button
                       key={source.id}
-                      onClick={() => updateField('referral_source', source.id)}
+                      onClick={() => { updateField('referral_source', source.id); setTimeout(() => nextStep(), 300); }}
                       className={`w-full flex items-center gap-4 px-4 py-3.5 rounded-[20px] transition-all text-left border ${
                         isSelected ? 'bg-[#22C55E]/10 border-[#22C55E] shadow-[0_0_15px_rgba(34,197,94,0.1)]' : 'bg-white/[0.03] border-white/5 hover:bg-white/5'
                       }`}
@@ -1980,13 +2043,13 @@ export const Quiz = () => {
           <motion.div
             initial={{ y: 20, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
-            className="flex flex-col items-center text-center px-6 pt-32 h-full w-full bg-[var(--bg-app)] transition-colors"
+            className="flex flex-col items-center text-center px-6 pt-16 h-full w-full bg-[var(--bg-app)] transition-colors"
           >
             <div className="flex flex-col items-start w-full max-w-sm">
               <h2 className="text-[30px] font-black text-white mb-2 leading-tight tracking-tight w-full text-center">
                 {langData.quiz_step_email_title}
               </h2>
-              <p className="text-gray-500 font-medium text-[14px] mb-10 w-full text-center">
+              <p className="text-gray-500 font-medium text-[14px] mb-8 w-full text-center">
                 {langData.quiz_email_subtitle}
               </p>
 
@@ -1998,8 +2061,19 @@ export const Quiz = () => {
                 placeholder={langData.quiz_email_placeholder}
                 value={formData.email || ''}
                 onChange={(e) => updateField('email', e.target.value)}
-                className="w-full bg-white/5 rounded-[16px] px-5 py-4 text-[16px] font-bold text-white placeholder-gray-500 outline-none border border-white/10 focus:border-white/20 transition-all shadow-sm"
+                className="w-full bg-white/5 rounded-[16px] px-5 py-4 text-[16px] font-bold text-white placeholder-gray-500 outline-none border border-white/10 focus:border-white/20 transition-all shadow-sm mb-4"
                 autoFocus
+              />
+
+              <label className="text-[12px] font-black text-gray-400 mb-2 ml-1 uppercase tracking-[2px]">
+                {language === 'PT' ? 'Senha' : 'Password'}
+              </label>
+              <input
+                type="password"
+                placeholder={language === 'PT' ? 'Mínimo 6 caracteres' : 'At least 6 characters'}
+                value={formData.password || ''}
+                onChange={(e) => updateField('password', e.target.value)}
+                className="w-full bg-white/5 rounded-[16px] px-5 py-4 text-[16px] font-bold text-white placeholder-gray-500 outline-none border border-white/10 focus:border-white/20 transition-all shadow-sm"
               />
             </div>
           </motion.div>
@@ -2716,6 +2790,13 @@ export const Quiz = () => {
         });
       }, 100);
       return () => clearInterval(timer);
+    }
+  }, [step, analysisProgress]);
+
+  useEffect(() => {
+    if (step === 27 && analysisProgress === 100) {
+      const timer = setTimeout(() => nextStep(), 800);
+      return () => clearTimeout(timer);
     }
   }, [step, analysisProgress]);
 

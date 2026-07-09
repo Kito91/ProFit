@@ -14,6 +14,7 @@ import { Profile } from './pages/Profile';
 import { FoodScanner } from './pages/Scanner';
 import { ScanResult } from './pages/ScanResult';
 import { Notifications } from './pages/Notifications';
+import { NotificationSettings } from './pages/NotificationSettings';
 import { Account } from './pages/Account';
 import { WorkoutSession } from './pages/WorkoutSession';
 import { NotificationPrompt } from './components/NotificationPrompt';
@@ -51,6 +52,9 @@ import { AdminThemeProvider } from './context/AdminThemeContext';
 import AdminWorkouts from './pages/admin/AdminWorkouts';
 import AdminFunnel from './pages/admin/AdminFunnel';
 import AdminCoupons from './pages/admin/AdminCoupons';
+import AdminAIConfig from './pages/admin/AdminAIConfig';
+import AdminAnalytics from './pages/admin/AdminAnalytics';
+import AdminSocial from './pages/admin/AdminSocial';
 
 const ProtectedRoute = ({ children }: { children: JSX.Element }) => {
   const { user, isAuthenticated, isLoading, authLoading, checkOnboardingStatus, totalUsersCount } = useAuth();
@@ -71,24 +75,25 @@ const ProtectedRoute = ({ children }: { children: JSX.Element }) => {
   const isBlocked = user?.is_blocked === true;
   const isExpired = user?.end_date && new Date(user.end_date) < new Date();
   
-  // BYPASS PROMOCIONAL DINÂMICO (20 USUÁRIOS / 30 DIAS)
+  // Free trial: 3 days from account creation
   const getDaysSinceCreation = () => {
     if (!user?.created_at) return 0;
     const date = new Date(user.created_at);
-    if (isNaN(date.getTime())) return 0; // Fallback para 0 dias se der erro na data
+    if (isNaN(date.getTime())) return 0;
     return (new Date().getTime() - date.getTime()) / (1000 * 60 * 60 * 24);
   };
 
   const daysSinceCreation = getDaysSinceCreation();
-  
-  // Se o servidor disse 'ativo', respeitamos. Caso contrário, verificamos a regra dos 20 users.
+  const FREE_TRIAL_DAYS = 3;
+  const isOnFreeTrial = daysSinceCreation < FREE_TRIAL_DAYS;
+
   const isServerActive = user?.subscription_status === 'ativo';
   const isUnderLimit = totalUsersCount > 0 ? totalUsersCount <= 20 : true;
-  const isPromoActive = isServerActive || isUnderLimit || user?.is_early_adopter;
+  const isPromoActive = isServerActive || isUnderLimit || user?.is_early_adopter || isOnFreeTrial;
   
   const isInactive = !isPromoActive && (user?.subscription_status !== 'ativo' || isExpired) && user?.role !== 'admin' && !user?.is_influencer;
   
-  const allowedWhenBlocked = ['/renovar-plano', '/checkout', '/profile', '/account', '/quiz', '/onboarding'];
+  const allowedWhenBlocked = ['/renovar-plano', '/checkout', '/plans', '/profile', '/account', '/quiz', '/onboarding'];
   const currentPath = window.location.pathname;
 
   if ((isBlocked || isInactive) && !allowedWhenBlocked.some(path => currentPath.startsWith(path))) {
@@ -222,6 +227,7 @@ function App() {
           <Route path="/scanner" element={<ProtectedRoute><FoodScanner /></ProtectedRoute>} />
           <Route path="/scan-result" element={<ProtectedRoute><ScanResult /></ProtectedRoute>} />
           <Route path="/notifications" element={<ProtectedRoute><Notifications /></ProtectedRoute>} />
+          <Route path="/notification-settings" element={<ProtectedRoute><NotificationSettings /></ProtectedRoute>} />
           <Route path="/workout/session/:day" element={<ProtectedRoute><WorkoutSession /></ProtectedRoute>} />
           <Route path="/preferences" element={<ProtectedRoute><Preferences /></ProtectedRoute>} />
           <Route path="/ai-chat" element={<ProtectedRoute><AIChat /></ProtectedRoute>} />
@@ -244,6 +250,9 @@ function App() {
             <Route path="coupons" element={<AdminCoupons />} />
             <Route path="dishes" element={<AdminDishes />} />
             <Route path="support" element={<AdminSupport />} />
+            <Route path="ai-config" element={<AdminAIConfig />} />
+            <Route path="analytics" element={<AdminAnalytics />} />
+            <Route path="social" element={<AdminSocial />} />
           </Route>
 
           {/* Redirect unknown routes */}

@@ -15,6 +15,16 @@ export const Login = () => {
   const [isLoading, setIsLoading] = useState(false);
   const { login } = useAuth();
 
+  const getErrorMessage = (err: any) => {
+    if (typeof err === 'string') return err;
+    if (err?.message) return err.message;
+    if (err?.error) return err.error;
+    if (err?.response?.data?.message) return err.response.data.message;
+    if (err?.response?.message) return err.response.message;
+    if (err?.data?.message) return err.data.message;
+    return langData.auth_error_server;
+  };
+
   const handleLogin = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     setIsLoading(true);
@@ -25,7 +35,7 @@ export const Login = () => {
       const normalizedEmail = email.trim().toLowerCase();
       const user = await login(normalizedEmail, password);
       
-      const userRole = user.role || 'user';
+      const userRole = user?.role || 'user';
       const isAdmin = normalizedEmail === 'handersonchemane@gmail.com' || userRole === 'admin';
       
       if (isAdmin) {
@@ -35,14 +45,13 @@ export const Login = () => {
       }
     } catch (err: any) {
       console.error("Erro no login detalhado:", err);
-      // Pega a mensagem do objeto retornado pela API ou da instância de Error
-      const msg = err.message || (typeof err === 'string' ? err : langData.auth_error_server);
+      const msg = getErrorMessage(err);
       setError(msg);
+      const status = err?.status ?? null;
       
-      // Mapeia o tipo de erro para feedback visual específico
-      if (err.status === 404 || msg.toLowerCase().includes('e-mail') || msg.toLowerCase().includes('conta não encontrada') || msg.toLowerCase().includes('usuário não encontrado')) {
+      if (status === 404 || msg.toLowerCase().includes('e-mail') || msg.toLowerCase().includes('conta não encontrada') || msg.toLowerCase().includes('usuário não encontrado')) {
         setErrorType('email');
-      } else if (err.status === 401 || msg.toLowerCase().includes('senha') || msg.toLowerCase().includes('incorreta')) {
+      } else if (status === 401 || msg.toLowerCase().includes('senha') || msg.toLowerCase().includes('incorreta')) {
         setErrorType('password');
       } else {
         setErrorType('general');

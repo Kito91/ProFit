@@ -63,24 +63,44 @@ exports.getResponses = async (req, res) => {
     res.status(500).json({ message: 'Internal server error' });
   }
 };
+exports.getQuizSync = async (req, res) => {
+  try {
+    let lead = null;
+
+    if (req.user?.email) {
+      const result = await db.query(
+        'SELECT id, email, name, responses, current_step, is_completed, last_active_at FROM quiz_leads WHERE email = $1 ORDER BY last_active_at DESC LIMIT 1',
+        [req.user.email]
+      );
+      lead = result.rows[0] || null;
+    }
+
+    res.json({ lead: lead || null });
+  } catch (error) {
+    console.error('Error getting quiz sync:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
 exports.syncQuizLead = async (req, res) => {
-  const { id, email, name, responses, current_step } = req.body;
-  
+  const { id, email, name, responses, current_step, is_completed } = req.body;
+
   if (!id) return res.status(400).json({ message: 'Lead ID is required' });
 
   try {
     const result = await db.query(`
-      INSERT INTO quiz_leads (id, email, name, responses, current_step, last_active_at)
-      VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)
+      INSERT INTO quiz_leads (id, email, name, responses, current_step, is_completed, last_active_at)
+      VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)
       ON CONFLICT (id)
-      DO UPDATE SET 
+      DO UPDATE SET
         email = COALESCE(EXCLUDED.email, quiz_leads.email),
         name = COALESCE(EXCLUDED.name, quiz_leads.name),
         responses = EXCLUDED.responses,
         current_step = EXCLUDED.current_step,
+        is_completed = EXCLUDED.is_completed,
         last_active_at = CURRENT_TIMESTAMP
       RETURNING id
-    `, [id, email || null, name || null, JSON.stringify(responses || {}), current_step || 1]);
+    `, [id, email || null, name || null, JSON.stringify(responses || {}), current_step || 1, is_completed ?? false]);
 
     res.json({ success: true, id: result.rows[0].id });
   } catch (error) {

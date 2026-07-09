@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Bell, CheckCircle2, Droplets, Target, Utensils, Info } from 'lucide-react';
+import { ArrowLeft, Bell, CheckCircle2, Droplets, Target, Utensils, Info, Settings2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '../services/api';
@@ -109,8 +109,14 @@ export const Notifications = () => {
         <div className="flex-[2] flex justify-center">
           <h1 className="text-[20px] font-black text-[var(--text-main)] tracking-tight">Notificações</h1>
         </div>
-        <div className="flex-1 flex justify-end">
-          <button 
+        <div className="flex-1 flex justify-end gap-2">
+          <button
+            onClick={() => navigate('/notification-settings')}
+            className="w-10 h-10 bg-[var(--bg-card)] rounded-full flex items-center justify-center active:scale-95 transition-all text-[var(--text-muted)]"
+          >
+            <Settings2 className="w-4 h-4" />
+          </button>
+          <button
             onClick={handleMarkAllAsRead}
             className="text-[11px] font-bold text-[#56AB2F] uppercase tracking-wider bg-[#A8E063]/10 px-3 py-1.5 rounded-full active:scale-95 transition-all"
           >
