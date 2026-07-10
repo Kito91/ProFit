@@ -57,7 +57,7 @@ class NotificationService {
       return false;
     }
 
-    // 1. Request permission
+    // 1. Request permission (must be triggered by user gesture on iOS)
     let permission = Notification.permission;
     if (permission === 'default') {
       permission = await Notification.requestPermission();
@@ -68,44 +68,44 @@ class NotificationService {
     }
 
     try {
-      // 2. Ensure SW is registered
-      let reg = await navigator.serviceWorker.getRegistration('/sw.js');
-      if (!reg) {
-        reg = await navigator.serviceWorker.register('/sw.js');
+      // 2. Register SW if not yet registered, then wait for it to be ACTIVE.
+      //    We use navigator.serviceWorker.ready (not the getRegistration result)
+      //    because on mobile the SW may still be in 'installing' state.
+      const existing = await navigator.serviceWorker.getRegistration('/');
+      if (!existing) {
+        await navigator.serviceWorker.register('/sw.js', { scope: '/' });
       }
+      const reg = await navigator.serviceWorker.ready;
 
-      // 3. Wait until SW is active
-      await navigator.serviceWorker.ready;
-
-      // 4. Get or create push subscription
+      // 3. Get existing push subscription
       let subscription = await reg.pushManager.getSubscription();
 
       if (subscription) {
-        // Check if it was created with the same VAPID key
         const existingKey = subscription.options?.applicationServerKey;
         const newKey = this.urlBase64ToUint8Array(this.VAPID_KEY);
         if (existingKey && this.uint8ArraysEqual(new Uint8Array(existingKey), newKey)) {
-          // Same key — reuse, just re-register with backend
-          await api.notifications.registerDevice(subscription);
+          // Same VAPID key — re-register with backend (no new sub needed)
+          await api.notifications.registerDevice(subscription.toJSON());
           return true;
         }
-        // Different key — unsubscribe and re-subscribe
+        // Different VAPID key — drop old subscription
         await subscription.unsubscribe();
       }
 
+      // 4. Create new push subscription
       subscription = await reg.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: this.urlBase64ToUint8Array(this.VAPID_KEY),
       });
 
-      // 5. Send to backend
-      await api.notifications.registerDevice(subscription);
+      // 5. toJSON() extracts endpoint + keys.p256dh + keys.auth properly
+      await api.notifications.registerDevice(subscription.toJSON());
       await api.user.updateNotificationSettings(true);
 
       console.log('[Push] Subscription successful.');
       return true;
-    } catch (err) {
-      console.error('[Push] Subscribe failed:', err);
+    } catch (err: any) {
+      console.error('[Push] Subscribe failed:', err?.name, err?.message, err);
       return false;
     }
   }
@@ -114,8 +114,8 @@ class NotificationService {
 
   async unsubscribe(): Promise<void> {
     try {
-      const reg = await navigator.serviceWorker.getRegistration('/sw.js');
       let endpoint: string | undefined;
+      const reg = await navigator.serviceWorker.getRegistration('/');
       if (reg) {
         const sub = await reg.pushManager.getSubscription();
         if (sub) {
@@ -123,7 +123,9 @@ class NotificationService {
           await sub.unsubscribe();
         }
       }
-      await api.notifications.removeDevice(endpoint ? { endpoint } : undefined);
+      if (endpoint) {
+        await api.notifications.removeDevice({ endpoint });
+      }
       await api.user.updateNotificationSettings(false);
     } catch (err) {
       console.error('[Push] Unsubscribe failed:', err);
