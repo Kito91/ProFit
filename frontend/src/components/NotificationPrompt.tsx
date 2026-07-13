@@ -1,23 +1,17 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Bell, X, CheckCircle2, ShieldCheck, Loader2, BellOff } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { notificationService } from '../services/notificationService';
+import { notificationService, PUSH_SUBSCRIPTION_CHANGED_EVENT } from '../services/notificationService';
 import { useAuth } from '../context/AuthContext';
 
 export const NotificationPrompt = () => {
   const { isAuthenticated } = useAuth();
   const [show, setShow] = useState(false);
-  const [status, setStatus] = useState<'prompt' | 'loading' | 'success' | 'denied' | 'ios-guide'>('prompt');
+  const [status, setStatus] = useState<'prompt' | 'loading' | 'success' | 'denied' | 'error' | 'ios-guide'>('prompt');
   const autoTriedRef = useRef(false);
 
   const handleEnable = useCallback(async (fromUserGesture = false) => {
     if (!isAuthenticated) return;
-
-    if (sessionStorage.getItem('notification_registered') && notificationService.getPermissionStatus() === 'granted') {
-      setStatus('success');
-      setTimeout(() => setShow(false), 2000);
-      return;
-    }
 
     setStatus('loading');
     try {
@@ -25,18 +19,17 @@ export const NotificationPrompt = () => {
 
       if (success) {
         setStatus('success');
-        sessionStorage.setItem('notification_registered', 'true');
+        notificationService.clearPromptDismissal();
         setTimeout(() => setShow(false), 3000);
       } else {
-        setStatus('denied');
-        // Always show the prompt so the user can retry manually
-        if (!localStorage.getItem('notification_prompt_dismissed') || fromUserGesture) {
+        setStatus(notificationService.getPermissionStatus() === 'denied' ? 'denied' : 'error');
+        if (!notificationService.isPromptDismissed() || fromUserGesture) {
           setShow(true);
         }
       }
     } catch (err) {
       console.error('[NotificationPrompt] Subscription error:', err);
-      setStatus('denied');
+      setStatus('error');
       setShow(true);
     }
   }, [isAuthenticated]);
@@ -48,7 +41,7 @@ export const NotificationPrompt = () => {
     // iOS not installed as PWA — show Add to Home Screen guide
     if (notificationService.isIOSNotPWA()) {
       const timer = setTimeout(() => {
-        if (!localStorage.getItem('notification_prompt_dismissed')) {
+        if (!notificationService.isPromptDismissed()) {
           setStatus('ios-guide');
           setShow(true);
         }
@@ -61,7 +54,6 @@ export const NotificationPrompt = () => {
     const permission = Notification.permission;
 
     if (permission === 'granted') {
-      if (sessionStorage.getItem('notification_registered')) return;
       // Already granted — try silent auto-subscribe once.
       // If it fails (e.g. iOS PWA pushManager issue), show the prompt so
       // the user can retry via button click (user gesture context).
@@ -75,7 +67,7 @@ export const NotificationPrompt = () => {
     if (permission === 'default') {
       const delay = notificationService.isStandalone() ? 1500 : 4000;
       const timer = setTimeout(() => {
-        if (!localStorage.getItem('notification_prompt_dismissed')) {
+        if (!notificationService.isPromptDismissed()) {
           setShow(true);
         }
       }, delay);
@@ -86,7 +78,7 @@ export const NotificationPrompt = () => {
   // When user returns from browser settings with permission now granted
   useEffect(() => {
     const handleFocus = () => {
-      if (Notification.permission === 'granted' && (status === 'denied' || status === 'prompt')) {
+      if ('Notification' in window && Notification.permission === 'granted' && (status === 'denied' || status === 'error' || status === 'prompt')) {
         handleEnable(true);
       }
     };
@@ -94,8 +86,15 @@ export const NotificationPrompt = () => {
     return () => window.removeEventListener('focus', handleFocus);
   }, [status, handleEnable]);
 
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const handleSubscriptionChange = () => handleEnable(false);
+    window.addEventListener(PUSH_SUBSCRIPTION_CHANGED_EVENT, handleSubscriptionChange);
+    return () => window.removeEventListener(PUSH_SUBSCRIPTION_CHANGED_EVENT, handleSubscriptionChange);
+  }, [isAuthenticated, handleEnable]);
+
   const handleDismiss = () => {
-    localStorage.setItem('notification_prompt_dismissed', 'true');
+    notificationService.dismissPrompt();
     setShow(false);
   };
 
@@ -135,7 +134,7 @@ export const NotificationPrompt = () => {
                     </p>
                     <div className="w-full space-y-2.5 text-left mb-5">
                       {[
-                        { step: '1', icon: '⬆️', text: 'Toque no botão Partilhar na barra do Safari' },
+                        { step: '1', icon: '⬆️', text: 'Abra o menu Partilhar do seu navegador' },
                         { step: '2', icon: '➕', text: 'Selecione "Adicionar ao Ecrã Inicial"' },
                         { step: '3', icon: '🏠', text: 'Abra o ProFit pelo ícone no ecrã inicial' },
                         { step: '4', icon: '🔔', text: 'Active as notificações dentro do app' },
@@ -168,14 +167,22 @@ export const NotificationPrompt = () => {
                     <p className="text-sm text-[var(--text-muted)] font-medium">Você agora receberá lembretes e atualizações do Profit.</p>
                   </motion.div>
 
-                ) : status === 'denied' ? (
+                ) : status === 'denied' || status === 'error' ? (
                   <div className="flex flex-col items-center text-center py-2">
                     <div className="w-14 h-14 bg-rose-100 rounded-2xl flex items-center justify-center mb-4">
                       <BellOff className="w-7 h-7 text-rose-500" />
                     </div>
-                    <h3 className="text-lg font-black text-[var(--text-main)] mb-2">Acesso bloqueado</h3>
+                    <h3 className="text-lg font-black text-[var(--text-main)] mb-2">
+                      {status === 'denied' ? 'Acesso bloqueado' : 'Não foi possível ativar'}
+                    </h3>
                     <div className="bg-rose-50 rounded-xl p-3 text-xs text-rose-600 font-medium leading-relaxed text-left mb-4">
+                      {status === 'error' ? (
+                        <>Verifique sua conexão e tente novamente. A permissão existe, mas o dispositivo ainda não foi registrado.</>
+                      ) : (
+                        <>
                       Para ativar, clique no ícone de cadeado 🔒 na barra de endereços do navegador e altere <strong>Notificações</strong> para <strong>Permitir</strong>.
+                        </>
+                      )}
                     </div>
                     <button
                       onClick={() => handleEnable(true)}

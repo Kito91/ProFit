@@ -315,7 +315,7 @@ export const Dashboard = () => {
         setDailyCache(prev => ({ ...prev, [dateStr]: ds }));
 
         // Only show prompt on initial mount (if needed)
-        const promptDismissed = localStorage.getItem('notification_prompt_dismissed');
+        const promptDismissed = notificationService.isPromptDismissed();
         if (data.profile && (data.profile.notifications_enabled === false || data.profile.notifications_enabled === null) && !promptDismissed) {
           setShowNotificationPrompt(true);
         }
@@ -429,7 +429,7 @@ export const Dashboard = () => {
       
       if (success) {
         console.log('[Dashboard] Native notifications activated successfully');
-        localStorage.setItem('notification_prompt_dismissed', 'true');
+        notificationService.clearPromptDismissal();
         setShowNotificationPrompt(false);
       } else {
         console.warn('[Dashboard] Could not activate native push');
@@ -441,7 +441,7 @@ export const Dashboard = () => {
   };
 
   const handleDismissNotifications = () => {
-    localStorage.setItem('notification_prompt_dismissed', 'true');
+    notificationService.dismissPrompt();
     setShowNotificationPrompt(false);
   };
 

@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-export const API_URL = 'https://profit.areauflashbrasiltv.com/api';
+export const API_URL = (import.meta.env.VITE_API_URL || 'https://profit.areauflashbrasiltv.com/api').replace(/\/$/, '');
 export const SOCKET_URL = (import.meta.env.VITE_API_URL || 'https://profit.areauflashbrasiltv.com/').replace(/\/api$/, '');
 
 const http = axios.create({

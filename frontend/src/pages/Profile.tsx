@@ -19,12 +19,15 @@ export const Profile = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [showDisableModal, setShowDisableModal] = useState(false);
   const [showEnableModal, setShowEnableModal] = useState(false);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
 
   useEffect(() => {
     const fetchProfile = async () => {
       try {
         const data = await api.user.getProfile();
         setProfile(data);
+        const pushState = await notificationService.getState();
+        setNotificationsEnabled(pushState.permission === 'granted' && pushState.subscribed);
       } catch (err) {
         console.error("Failed to load profile");
       } finally {
@@ -55,9 +58,7 @@ export const Profile = () => {
   };
 
   const handleToggleNotifications = async () => {
-    const browserPermission = notificationService.getPermissionStatus();
-
-    if (profile?.notifications_enabled && browserPermission === 'granted') {
+    if (notificationsEnabled) {
       setShowDisableModal(true);
     } else {
       confirmEnableNotifications();
@@ -68,8 +69,10 @@ export const Profile = () => {
     try {
       const success = await notificationService.subscribe();
       if (success) {
+        setNotificationsEnabled(true);
         setProfile({ ...profile, notifications_enabled: true });
       } else {
+        setNotificationsEnabled(false);
         setProfile({ ...profile, notifications_enabled: false });
         console.log("Permission denied or failed to subscribe");
       }
@@ -82,8 +85,11 @@ export const Profile = () => {
 
   const confirmDisableNotifications = async () => {
     try {
-      await notificationService.unsubscribe();
-      setProfile({ ...profile, notifications_enabled: false });
+      const success = await notificationService.unsubscribe();
+      if (success) {
+        setNotificationsEnabled(false);
+        setProfile({ ...profile, notifications_enabled: false });
+      }
     } catch (err) {
       console.error(err);
     } finally {
@@ -237,8 +243,8 @@ export const Profile = () => {
               color="text-green-500" 
               onClick={handleToggleNotifications}
               rightElement={
-                <span className={`text-[12px] font-bold ${profile?.notifications_enabled ? 'text-[#56AB2F]' : 'text-[var(--text-muted)]'}`}>
-                  {profile?.notifications_enabled ? langData.profile_notif_enabled : langData.profile_notif_disabled}
+                <span className={`text-[12px] font-bold ${notificationsEnabled ? 'text-[#56AB2F]' : 'text-[var(--text-muted)]'}`}>
+                  {notificationsEnabled ? langData.profile_notif_enabled : langData.profile_notif_disabled}
                 </span>
               }
             />

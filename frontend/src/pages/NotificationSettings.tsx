@@ -86,14 +86,24 @@ export const NotificationSettings: React.FC = () => {
   const { user }  = useAuth();
 
   const [pushStatus,    setPushStatus]    = useState<'granted' | 'denied' | 'default' | 'unsupported'>('default');
+  const [pushSubscribed, setPushSubscribed] = useState(false);
+  const [pushRequiresInstall, setPushRequiresInstall] = useState(false);
   const [isSubscribing, setIsSubscribing] = useState(false);
   const [prefs,         setPrefs]         = useState<NotifPrefs>(defaultPrefs);
   const [workoutDays,   setWorkoutDays]   = useState<string[]>([]);
   const [workoutTime,   setWorkoutTime]   = useState<string | null>(null);
 
+  const refreshPushState = async () => {
+    const state = await notificationService.getState();
+    setPushStatus(state.permission);
+    setPushSubscribed(state.subscribed);
+    setPushRequiresInstall(state.requiresInstall);
+    return state;
+  };
+
   // ── Load state ─────────────────────────────────────────────────────────────
   useEffect(() => {
-    setPushStatus(notificationService.getPermissionStatus());
+    refreshPushState();
 
     // Load server settings (merge with local fallback)
     api.notifications.getSettings().then((s: any) => {
@@ -149,6 +159,10 @@ export const NotificationSettings: React.FC = () => {
 
   // ── Push toggle ────────────────────────────────────────────────────────────
   const handlePushToggle = async () => {
+    if (pushRequiresInstall) {
+      toast('No iPhone/iPad, adicione o ProFit ao Ecrã Inicial e abra-o pelo ícone para ativar notificações.', { icon: '📲' });
+      return;
+    }
     if (pushStatus === 'unsupported') {
       toast.error('Notificações não suportadas neste navegador');
       return;
@@ -158,12 +172,12 @@ export const NotificationSettings: React.FC = () => {
       return;
     }
 
-    if (pushStatus === 'granted') {
+    if (pushStatus === 'granted' && pushSubscribed) {
       setIsSubscribing(true);
       try {
-        await notificationService.unsubscribe();
-        await api.notifications.removeDevice().catch(() => {});
-        setPushStatus('default');
+        const ok = await notificationService.unsubscribe();
+        await refreshPushState();
+        if (!ok) throw new Error('Local push unsubscribe failed.');
         toast.success('Notificações desativadas');
       } catch (_) {
         toast.error('Erro ao desativar notificações');
@@ -175,10 +189,14 @@ export const NotificationSettings: React.FC = () => {
       try {
         const ok = await notificationService.subscribe();
         if (ok) {
-          setPushStatus('granted');
+          await refreshPushState();
           toast.success('Notificações ativadas! 🔔');
         } else {
-          setPushStatus(notificationService.getPermissionStatus());
+          const state = await refreshPushState();
+          if (state.permission !== 'denied') {
+            toast.error('Não foi possível registrar este dispositivo');
+            return;
+          }
           toast.error('Permissão negada pelo navegador');
         }
       } catch (_) {
@@ -198,7 +216,7 @@ export const NotificationSettings: React.FC = () => {
     toast.success(val ? 'E-mails ativados' : 'E-mails desativados');
   };
 
-  const isPushActive = pushStatus === 'granted';
+  const isPushActive = pushStatus === 'granted' && pushSubscribed;
   const isPushDenied = pushStatus === 'denied';
 
   // ─────────────────────────────────────────────────────────────────────────

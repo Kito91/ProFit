@@ -22,11 +22,6 @@ export const NotificationCenter: React.FC = () => {
             const handleNewNotification = (notif: any) => {
                 setNotifications(prev => [notif, ...prev]);
                 setUnreadCount(prev => prev + 1);
-                
-                // Optional: Play subtle sound or show browser toast if supported
-                if ('Notification' in window && Notification.permission === 'granted' && document.hidden) {
-                    new Notification(notif.title, { body: notif.message });
-                }
             };
 
             socketService.getSocket()?.on('new_notification', handleNewNotification);

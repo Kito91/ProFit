@@ -3,6 +3,8 @@
   "name": "ProFit - Treine com Inteligência",
   "short_name": "ProFit",
   "description": "Seu assistente inteligente de calorias e treinos com IA.",
+  "lang": "pt-PT",
+  "dir": "ltr",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

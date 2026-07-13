@@ -1,3 +1,0 @@
-public.workout_plans
-public.workout_sessions
-public.workouts

@@ -37,7 +37,8 @@ export const Account = () => {
     try {
       const data = await api.user.getProfile();
       setProfile(data);
-      setNotificationsEnabled(!!data.notifications_enabled);
+      const pushState = await notificationService.getState();
+      setNotificationsEnabled(pushState.permission === 'granted' && pushState.subscribed);
       setFormData({
         name: data.name || '',
         email: data.email || '',
@@ -117,10 +118,15 @@ export const Account = () => {
           return;
         }
       } else {
-        await notificationService.unsubscribe();
+        const success = await notificationService.unsubscribe();
+        if (!success) {
+          setError("Não foi possível desativar as notificações neste dispositivo.");
+          return;
+        }
       }
 
-      setNotificationsEnabled(newValue);
+      const pushState = await notificationService.getState();
+      setNotificationsEnabled(pushState.permission === 'granted' && pushState.subscribed);
       setShowSuccess(true);
       setTimeout(() => setShowSuccess(false), 2000);
     } catch (err) {

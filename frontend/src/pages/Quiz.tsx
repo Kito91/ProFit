@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
 import { ChevronLeft, ChevronRight, BarChart2, Users, Calendar, Apple, Utensils, Sun, Dumbbell, Smile, Trophy, Star, CheckCircle, MessageCircle, Clock, Sparkles, Zap, Bell, ChevronDown, User, Lock, X, Scan, Image as ImageIcon, ShieldCheck, Crown } from 'lucide-react';
 import { ConfirmModal } from '../components/ConfirmModal';
+import { notificationService } from '../services/notificationService';
 
 const PENDING_QUIZ_DATA_KEY = 'pending_quiz_data';
 const PENDING_QUIZ_STEP_KEY = 'pending_quiz_step';
@@ -434,7 +435,7 @@ export const Quiz = () => {
         localStorage.setItem('user', JSON.stringify(res.user));
 
         if (pushSubscription) {
-          api.notifications.registerDevice(pushSubscription).catch(e => console.error('Failed to register device:', e));
+          await notificationService.subscribe().catch(e => console.error('Failed to register device:', e));
         }
 
         window.location.href = '/dashboard';
@@ -459,7 +460,7 @@ export const Quiz = () => {
               onboarding_completed: true
             });
             if (pushSubscription) {
-              api.notifications.registerDevice(pushSubscription).catch(e => console.error('Failed to register device:', e));
+              await notificationService.subscribe().catch(e => console.error('Failed to register device:', e));
             }
             window.location.href = '/dashboard';
           }
@@ -503,7 +504,7 @@ export const Quiz = () => {
         // Registrar dispositivo se tiver subscrição
         if (pushSubscription) {
           try {
-            await api.notifications.registerDevice(pushSubscription);
+            await notificationService.subscribe();
           } catch (pushErr) {
             console.error('Failed to register device during manual login:', pushErr);
           }
@@ -772,17 +773,8 @@ export const Quiz = () => {
 
   const handleEnableNotifications = async () => {
     try {
-      if ('Notification' in window && 'serviceWorker' in navigator) {
-        const permission = await Notification.requestPermission();
-        if (permission === 'granted') {
-          const registration = await navigator.serviceWorker.ready;
-          const subscription = await registration.pushManager.subscribe({
-            userVisibleOnly: true,
-            applicationServerKey: import.meta.env.VITE_VAPID_PUBLIC_KEY || 'BF7_X_Mqc3y-O_X7vGz-5v2k...' // Use the env key
-          });
-          setPushSubscription(subscription);
-        }
-      }
+      const permissionGranted = await notificationService.requestPermission();
+      setPushSubscription(permissionGranted ? true : null);
     } catch (err) {
       console.error('Erro ao solicitar permissão:', err);
     } finally {
@@ -1883,9 +1875,7 @@ export const Quiz = () => {
       case 26: {
         const handleEnableNotifications = async () => {
           try {
-            if ('Notification' in window) {
-              await Notification.requestPermission();
-            }
+            await notificationService.requestPermission();
           } catch (err) {
             console.error('Erro ao solicitar permissão:', err);
           } finally {

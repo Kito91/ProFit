@@ -8,6 +8,7 @@ import {
   Globe, Search, Check
 } from 'lucide-react';
 import { api, API_URL } from '../../services/api';
+import { notificationService } from '../../services/notificationService';
 import { useAuth } from '../../context/AuthContext';
 import { motion } from 'framer-motion';
 
@@ -164,31 +165,18 @@ const AdminCommunication: React.FC = () => {
     };
 
     const checkSubscription = async () => {
-        if ('serviceWorker' in navigator) {
-            const registration = await navigator.serviceWorker.ready;
-            const subscription = await registration.pushManager.getSubscription();
-            setIsSubscribed(!!subscription);
-        }
+        const pushState = await notificationService.getState();
+        setIsSubscribed(pushState.permission === 'granted' && pushState.subscribed);
     };
 
     const handleSubscribe = async () => {
         try {
-            const registration = await navigator.serviceWorker.ready;
-            const subscription = await registration.pushManager.subscribe({
-                userVisibleOnly: true,
-                applicationServerKey: import.meta.env.VITE_VAPID_PUBLIC_KEY || 'BF7_...' // Fallback if needed
-            });
-
-            await fetch(`${API_URL}/notifications/subscribe`, {
-                method: 'POST',
-                headers: { 
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${localStorage.getItem('token')}`
-                },
-                body: JSON.stringify(subscription)
-            });
-
-            setIsSubscribed(true);
+            const subscribed = await notificationService.subscribe();
+            setIsSubscribed(subscribed);
+            if (!subscribed) {
+                setStatus({ type: 'error', message: 'Não foi possível registrar este navegador.' });
+                return;
+            }
             setStatus({ type: 'success', message: 'Notificações habilitadas neste navegador!' });
         } catch (err) {
             console.error('Subscription error:', err);

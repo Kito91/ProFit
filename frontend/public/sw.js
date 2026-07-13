@@ -1,104 +1,153 @@
 /**
- * ProFit Service Worker — PWA Cache + Web Push
- * Compatible: Chrome, Firefox, Edge, Safari iOS 16.4+ (PWA)
+ * ProFit service worker: resilient app shell + standards-based Web Push.
+ * The push path intentionally uses a small common subset of NotificationOptions.
  */
 
-const CACHE_NAME = 'profit-v3';
-const PRECACHE = ['/', '/index.html', '/manifest.json', '/faviconnovo.png'];
+const CACHE_NAME = 'profit-v4';
+const APP_SHELL = ['/index.html', '/manifest.json', '/faviconnovo.png'];
 
-// ── Install ──────────────────────────────────────────────────
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(PRECACHE))
+    caches.open(CACHE_NAME).then(async (cache) => {
+      await Promise.allSettled(APP_SHELL.map((url) => cache.add(url)));
+    }),
   );
   self.skipWaiting();
 });
 
-// ── Activate ─────────────────────────────────────────────────
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys()
-      .then((keys) => Promise.all(
-        keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k))
-      ))
-      .then(() => self.clients.claim())
+    caches
+      .keys()
+      .then((keys) => Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))))
+      .then(() => self.clients.claim()),
   );
 });
 
-// ── Fetch (cache-first for static, network-first for API) ────
 self.addEventListener('fetch', (event) => {
-  if (event.request.method !== 'GET') return;
-  if (event.request.url.includes('/api/')) return;
+  const { request } = event;
+  if (request.method !== 'GET') return;
 
-  event.respondWith(
-    caches.match(event.request).then((cached) => {
-      if (cached) return cached;
-      return fetch(event.request).catch(() => caches.match('/index.html'));
-    })
-  );
+  const url = new URL(request.url);
+  if (url.origin !== self.location.origin || url.pathname.startsWith('/api/')) return;
+
+  // Navigation must prefer the network so a previous app shell cannot pin an old release.
+  if (request.mode === 'navigate') {
+    event.respondWith(
+      fetch(request)
+        .then((response) => {
+          if (response.ok) {
+            const copy = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put('/index.html', copy));
+          }
+          return response;
+        })
+        .catch(async () => (await caches.match('/index.html')) || Response.error()),
+    );
+    return;
+  }
+
+  // Static assets use stale-while-revalidate. Failed images never fall back to HTML.
+  if (['style', 'script', 'image', 'font'].includes(request.destination)) {
+    event.respondWith(
+      caches.match(request).then((cached) => {
+        const network = fetch(request)
+          .then((response) => {
+            if (response.ok) {
+              const copy = response.clone();
+              caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+            }
+            return response;
+          })
+          .catch(() => cached || Response.error());
+        return cached || network;
+      }),
+    );
+  }
 });
 
-// ── Push ─────────────────────────────────────────────────────
-// Uses ONLY options that are safe across ALL browsers including iOS Safari PWA.
-// Never use: vibrate, actions, renotify, badge, requireInteraction
-// (they silently fail or crash showNotification on iOS).
 self.addEventListener('push', (event) => {
-  if (!event.data) return;
+  let payload = {};
 
-  let title = 'ProFit';
-  let options = {
-    body: '',
-    icon: '/faviconnovo.png',
-    data: { url: '/' },
+  if (event.data) {
+    try {
+      payload = event.data.json();
+    } catch {
+      payload = { body: event.data.text() };
+    }
+  }
+
+  if (!payload || typeof payload !== 'object') payload = { body: String(payload || '') };
+
+  const declarativeNotification = payload.notification || {};
+  const payloadData =
+    payload.data && typeof payload.data === 'object' ? payload.data : {};
+
+  const title = payload.title || declarativeNotification.title || 'ProFit';
+  const targetUrl =
+    payloadData.url ||
+    payloadData.click_action ||
+    payload.url ||
+    payload.click_action ||
+    declarativeNotification.navigate ||
+    '/';
+
+  const options = {
+    body: payload.body || declarativeNotification.body || '',
+    icon: payload.icon || declarativeNotification.icon || '/faviconnovo.png',
+    data: { ...payloadData, url: targetUrl },
   };
 
-  try {
-    const payload = event.data.json();
-
-    title = payload.title || 'ProFit';
-
-    const targetUrl =
-      payload.data?.url ||
-      payload.data?.click_action ||
-      payload.url ||
-      payload.click_action ||
-      '/';
-
-    options = {
-      body: payload.body || '',
-      icon: '/faviconnovo.png',
-      // tag groups duplicate notifications — safe on all platforms
-      tag: payload.data?.tag || payload.tag || 'profit-push',
-      // timestamp is safe on all platforms
-      timestamp: Date.now(),
-      data: { url: targetUrl, ...payload.data },
-    };
-  } catch (_) {
-    // Fallback for plain-text payloads
-    options.body = event.data.text();
-  }
+  // Only group notifications when the sender explicitly provides a tag.
+  // A global default tag would replace unrelated notifications on the device.
+  const tag = payload.tag || payloadData.tag || declarativeNotification.tag;
+  if (tag && tag !== 'profit-push') options.tag = tag;
 
   event.waitUntil(self.registration.showNotification(title, options));
 });
 
-// ── Notification click ────────────────────────────────────────
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
 
-  const urlToOpen = event.notification.data?.url || '/';
+  let target;
+  try {
+    target = new URL(event.notification.data?.url || '/', self.location.origin);
+    if (target.origin !== self.location.origin) target = new URL('/', self.location.origin);
+  } catch {
+    target = new URL('/', self.location.origin);
+  }
 
   event.waitUntil(
-    clients
-      .matchAll({ type: 'window', includeUncontrolled: true })
-      .then((list) => {
-        // Navigate an existing window to the target URL then focus it
-        for (const client of list) {
-          if ('navigate' in client && 'focus' in client) {
-            return client.navigate(urlToOpen).then((c) => c && c.focus());
-          }
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(async (windowClients) => {
+      for (const client of windowClients) {
+        if (new URL(client.url).origin !== self.location.origin) continue;
+        if ('navigate' in client) await client.navigate(target.href);
+        if ('focus' in client) return client.focus();
+      }
+      return self.clients.openWindow ? self.clients.openWindow(target.href) : undefined;
+    }),
+  );
+});
+
+// Some push services rotate subscriptions. Recreate it when possible and ask any
+// open authenticated client to synchronize the new endpoint with the API.
+self.addEventListener('pushsubscriptionchange', (event) => {
+  event.waitUntil(
+    (async () => {
+      const applicationServerKey = event.oldSubscription?.options?.applicationServerKey;
+      if (applicationServerKey) {
+        try {
+          await self.registration.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey,
+          });
+        } catch (error) {
+          console.warn('[Push] Automatic subscription rotation failed.', error);
         }
-        // No existing window — open a new one
-        if (clients.openWindow) return clients.openWindow(urlToOpen);
-      })
+      }
+
+      const windowClients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+      windowClients.forEach((client) => client.postMessage({ type: 'PUSH_SUBSCRIPTION_CHANGED' }));
+    })(),
   );
 });
