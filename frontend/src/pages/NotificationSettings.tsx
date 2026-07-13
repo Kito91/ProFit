@@ -48,10 +48,11 @@ const REMINDERS = [
 ] as const;
 
 // ─── Toggle Component ────────────────────────────────────────────────────────
-const Toggle = ({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) => (
+const Toggle = ({ value, onChange, disabled = false }: { value: boolean; onChange: (v: boolean) => void; disabled?: boolean }) => (
   <button
     onClick={() => onChange(!value)}
-    className={`relative w-12 h-6 rounded-full transition-all duration-300 flex-shrink-0 ${value ? 'bg-[#56AB2F]' : 'bg-white/10'}`}
+    disabled={disabled}
+    className={`relative w-12 h-6 rounded-full transition-all duration-300 flex-shrink-0 disabled:opacity-40 ${value ? 'bg-[#56AB2F]' : 'bg-white/10'}`}
   >
     <motion.div
       layout
@@ -88,6 +89,7 @@ export const NotificationSettings: React.FC = () => {
   const [pushStatus,    setPushStatus]    = useState<'granted' | 'denied' | 'default' | 'unsupported'>('default');
   const [pushSubscribed, setPushSubscribed] = useState(false);
   const [pushRequiresInstall, setPushRequiresInstall] = useState(false);
+  const [pushReady, setPushReady] = useState(false);
   const [isSubscribing, setIsSubscribing] = useState(false);
   const [prefs,         setPrefs]         = useState<NotifPrefs>(defaultPrefs);
   const [workoutDays,   setWorkoutDays]   = useState<string[]>([]);
@@ -103,6 +105,7 @@ export const NotificationSettings: React.FC = () => {
 
   // ── Load state ─────────────────────────────────────────────────────────────
   useEffect(() => {
+    void notificationService.prepareForPermissionPrompt().then(setPushReady);
     refreshPushState();
 
     // Load server settings (merge with local fallback)
@@ -146,6 +149,16 @@ export const NotificationSettings: React.FC = () => {
     }).catch(() => {});
   }, []);
 
+  useEffect(() => {
+    const refreshOnFocus = () => void refreshPushState();
+    window.addEventListener('focus', refreshOnFocus);
+    document.addEventListener('visibilitychange', refreshOnFocus);
+    return () => {
+      window.removeEventListener('focus', refreshOnFocus);
+      document.removeEventListener('visibilitychange', refreshOnFocus);
+    };
+  }, []);
+
   // ── Persist prefs ──────────────────────────────────────────────────────────
   const updatePref = (key: keyof NotifPrefs, val: boolean) => {
     const next = { ...prefs, [key]: val };
@@ -168,7 +181,12 @@ export const NotificationSettings: React.FC = () => {
       return;
     }
     if (pushStatus === 'denied') {
-      toast('Ative as notificações nas configurações do seu navegador', { icon: 'ℹ️' });
+      toast(
+        notificationService.isIOS()
+          ? 'O iOS já bloqueou a permissão. Ative em Definições > Notificações > ProFit.'
+          : 'Ative as notificações nas configurações do seu navegador',
+        { icon: 'ℹ️' },
+      );
       return;
     }
 
@@ -253,15 +271,23 @@ export const NotificationSettings: React.FC = () => {
             <div className="flex-1">
               <p className="text-[15px] font-bold">Notificações Push</p>
               <p className={`text-[12px] font-medium mt-0.5 ${isPushActive ? 'text-[#56AB2F]' : 'text-slate-500'}`}>
-                {isPushActive ? 'Ativado' : isPushDenied ? 'Bloqueado pelo navegador' : 'Desativado'}
+                {isPushActive ? 'Ativado' : isPushDenied ? 'Bloqueado pelo navegador' : !pushReady && pushStatus === 'default' ? 'A preparar...' : 'Desativado'}
               </p>
             </div>
             {isPushDenied ? (
-              <div className="w-8 h-8 rounded-xl bg-red-500/10 flex items-center justify-center">
+              <button
+                onClick={handlePushToggle}
+                aria-label="Ver instruções para ativar notificações"
+                className="w-8 h-8 rounded-xl bg-red-500/10 flex items-center justify-center"
+              >
                 <AlertCircle className="w-4 h-4 text-red-400" />
-              </div>
+              </button>
             ) : (
-              <Toggle value={isPushActive} onChange={handlePushToggle} />
+              <Toggle
+                value={isPushActive}
+                onChange={handlePushToggle}
+                disabled={isSubscribing || (!pushReady && pushStatus === 'default')}
+              />
             )}
           </div>
 
@@ -275,7 +301,11 @@ export const NotificationSettings: React.FC = () => {
           {isPushDenied && (
             <div className="mt-3 p-3 bg-red-500/10 rounded-2xl border border-red-500/20">
               <p className="text-[12px] text-red-300 leading-relaxed">
-                As notificações estão bloqueadas. Aceda às configurações do seu navegador e ative as notificações para <strong>myprofittness.com</strong>.
+                {notificationService.isIOS() ? (
+                  <>O pedido do sistema já foi bloqueado e não pode aparecer novamente. Abra <strong>Definições &gt; Notificações &gt; ProFit</strong> e ative as notificações.</>
+                ) : (
+                  <>As notificações estão bloqueadas. Aceda às configurações do navegador e ative as notificações para <strong>myprofittness.com</strong>.</>
+                )}
               </p>
             </div>
           )}

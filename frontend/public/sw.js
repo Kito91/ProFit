@@ -3,7 +3,7 @@
  * The push path intentionally uses a small common subset of NotificationOptions.
  */
 
-const CACHE_NAME = 'profit-v5';
+const CACHE_NAME = 'profit-v6';
 const APP_SHELL = ['/index.html', '/manifest.json', '/faviconnovo.png'];
 
 self.addEventListener('install', (event) => {

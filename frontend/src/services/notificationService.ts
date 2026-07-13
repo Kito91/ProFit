@@ -29,7 +29,8 @@ export const PUSH_SUBSCRIPTION_CHANGED_EVENT = 'profit:push-subscription-changed
 const SERVICE_WORKER_URL = '/sw.js';
 const SERVICE_WORKER_SCOPE = '/';
 const SERVICE_WORKER_READY_TIMEOUT_MS = 15_000;
-const PROMPT_DISMISSED_KEY = 'profit_push_prompt_dismissed_at';
+const PROMPT_DISMISSED_KEY = 'profit_push_prompt_dismissed_at_v2';
+const PREVIOUS_PROMPT_DISMISSED_KEY = 'profit_push_prompt_dismissed_at';
 const LEGACY_PROMPT_DISMISSED_KEY = 'notification_prompt_dismissed';
 const PUSH_USER_KEY = 'profit_push_user_id';
 
@@ -63,9 +64,12 @@ class NotificationService {
   getUnsupportedReason(): PushUnsupportedReason {
     if (!window.isSecureContext) return 'insecure-context';
     if (this.isIOSNotPWA()) return 'ios-install-required';
+    const hasRegistrationPushManager =
+      'ServiceWorkerRegistration' in window &&
+      'pushManager' in ServiceWorkerRegistration.prototype;
     if (
       !('serviceWorker' in navigator) ||
-      !('PushManager' in window) ||
+      (!('PushManager' in window) && !hasRegistrationPushManager) ||
       !('Notification' in window)
     ) {
       return 'missing-api';
@@ -329,11 +333,13 @@ class NotificationService {
 
   dismissPrompt(): void {
     localStorage.setItem(PROMPT_DISMISSED_KEY, String(Date.now()));
+    localStorage.removeItem(PREVIOUS_PROMPT_DISMISSED_KEY);
     localStorage.removeItem(LEGACY_PROMPT_DISMISSED_KEY);
   }
 
   clearPromptDismissal(): void {
     localStorage.removeItem(PROMPT_DISMISSED_KEY);
+    localStorage.removeItem(PREVIOUS_PROMPT_DISMISSED_KEY);
     localStorage.removeItem(LEGACY_PROMPT_DISMISSED_KEY);
     sessionStorage.removeItem('notification_registered');
   }

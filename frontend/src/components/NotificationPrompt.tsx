@@ -8,6 +8,7 @@ export const NotificationPrompt = () => {
   const { isAuthenticated } = useAuth();
   const [show, setShow] = useState(false);
   const [status, setStatus] = useState<'prompt' | 'loading' | 'success' | 'denied' | 'error' | 'browser-error' | 'ios-guide'>('prompt');
+  const [pushReady, setPushReady] = useState(false);
   const autoTriedRef = useRef(false);
 
   const handleEnable = useCallback(async (fromUserGesture = false) => {
@@ -58,7 +59,15 @@ export const NotificationPrompt = () => {
       return () => clearTimeout(timer);
     }
 
-    if (!('Notification' in window) || !('serviceWorker' in navigator)) return;
+    if (!('Notification' in window) || !('serviceWorker' in navigator)) {
+      const timer = setTimeout(() => {
+        if (!notificationService.isPromptDismissed()) {
+          setStatus('browser-error');
+          setShow(true);
+        }
+      }, 1500);
+      return () => clearTimeout(timer);
+    }
 
     const permission = Notification.permission;
 
@@ -74,14 +83,26 @@ export const NotificationPrompt = () => {
     }
 
     if (permission === 'default') {
-      void notificationService.prepareForPermissionPrompt();
+      void notificationService.prepareForPermissionPrompt().then((ready) => {
+        setPushReady(ready);
+        if (!ready) setStatus('browser-error');
+      });
       const delay = notificationService.isStandalone() ? 1500 : 4000;
-      const timer = setTimeout(async () => {
-        const isReady = await notificationService.prepareForPermissionPrompt();
-        if (isReady && !notificationService.isPromptDismissed()) {
+      const timer = setTimeout(() => {
+        if (!notificationService.isPromptDismissed()) {
           setShow(true);
         }
       }, delay);
+      return () => clearTimeout(timer);
+    }
+
+    if (permission === 'denied') {
+      const timer = setTimeout(() => {
+        if (!notificationService.isPromptDismissed()) {
+          setStatus('denied');
+          setShow(true);
+        }
+      }, 1500);
       return () => clearTimeout(timer);
     }
   }, [isAuthenticated, handleEnable]);
@@ -193,16 +214,24 @@ export const NotificationPrompt = () => {
                         <>Feche o ProFit, abra novamente pelo ícone no Ecrã Inicial e toque em ativar. Confirme também que o dispositivo usa iOS 16.4 ou mais recente.</>
                       ) : (
                         <>
-                      Para ativar, clique no ícone de cadeado 🔒 na barra de endereços do navegador e altere <strong>Notificações</strong> para <strong>Permitir</strong>.
+                          {notificationService.isIOS() ? (
+                            <>O iOS não mostrará novamente o pedido do sistema. Abra <strong>Definições &gt; Notificações &gt; ProFit</strong> e permita as notificações.</>
+                          ) : (
+                            <>Abra as configurações deste site no navegador e altere <strong>Notificações</strong> para <strong>Permitir</strong>.</>
+                          )}
                         </>
                       )}
                     </div>
                     <button
                       onClick={() => handleEnable(true)}
-                      className="w-full py-3 bg-gray-900 text-white rounded-xl font-bold text-[13px] flex items-center justify-center gap-2 active:scale-95 transition-all shadow-lg"
+                      disabled={status === 'browser-error' && !pushReady}
+                      className="w-full py-3 bg-gray-900 text-white rounded-xl font-bold text-[13px] flex items-center justify-center gap-2 active:scale-95 transition-all shadow-lg disabled:opacity-60"
                     >
-                      <ShieldCheck className="w-4 h-4" />
-                      <span>Verificar Novamente</span>
+                      {status === 'browser-error' && !pushReady ? (
+                        <><Loader2 className="w-4 h-4 animate-spin" /><span>Preparando...</span></>
+                      ) : (
+                        <><ShieldCheck className="w-4 h-4" /><span>Verificar Novamente</span></>
+                      )}
                     </button>
                   </div>
 
@@ -233,10 +262,10 @@ export const NotificationPrompt = () => {
 
                     <button
                       onClick={() => handleEnable(true)}
-                      disabled={status === 'loading'}
+                      disabled={status === 'loading' || !pushReady}
                       className="w-full py-4 bg-gradient-to-r from-[#56AB2F] to-[#A8E063] text-white rounded-[18px] font-black text-[14px] uppercase tracking-widest flex items-center justify-center gap-2 active:scale-95 transition-all shadow-[0_8px_24px_rgba(86,171,47,0.35)] disabled:opacity-70"
                     >
-                      {status === 'loading' ? (
+                      {status === 'loading' || !pushReady ? (
                         <><Loader2 className="w-4 h-4 animate-spin" /><span>Ativando...</span></>
                       ) : (
                         <><ShieldCheck className="w-4 h-4" /><span>Ativar Notificações</span></>
