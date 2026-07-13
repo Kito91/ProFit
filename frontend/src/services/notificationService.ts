@@ -7,6 +7,14 @@ export type PushUnsupportedReason =
   | 'missing-api'
   | 'missing-vapid-key'
   | null;
+export type PushFailureReason =
+  | Exclude<PushUnsupportedReason, null>
+  | 'permission-denied'
+  | 'permission-not-granted'
+  | 'service-worker-not-ready'
+  | 'subscription-failed'
+  | 'api-registration-failed'
+  | null;
 
 export interface PushState {
   supported: boolean;
@@ -28,6 +36,9 @@ const PUSH_USER_KEY = 'profit_push_user_id';
 class NotificationService {
   private readonly vapidKey = (import.meta.env.VITE_VAPID_PUBLIC_KEY || '').trim();
   private registrationPromise: Promise<ServiceWorkerRegistration> | null = null;
+  private activeRegistration: ServiceWorkerRegistration | null = null;
+  private currentSubscription: PushSubscription | null = null;
+  private lastFailureReason: PushFailureReason = null;
   private initialized = false;
 
   isIOS(): boolean {
@@ -77,11 +88,13 @@ class NotificationService {
     const permission = reason ? 'unsupported' : (Notification.permission as NotificationStatus);
     let subscribed = false;
 
-    if (!reason && permission === 'granted') {
+    if (!reason) {
       try {
         const registration = await navigator.serviceWorker.getRegistration(SERVICE_WORKER_SCOPE);
         const subscription = await registration?.pushManager.getSubscription();
-        subscribed = !!subscription && this.subscriptionUsesCurrentVapidKey(subscription);
+        if (registration?.active) this.activeRegistration = registration;
+        this.currentSubscription = subscription || null;
+        subscribed = permission === 'granted' && !!subscription && this.subscriptionUsesCurrentVapidKey(subscription);
       } catch (error) {
         console.warn('[Push] Could not inspect the current subscription.', error);
       }
@@ -117,18 +130,97 @@ class NotificationService {
     else window.addEventListener('load', register, { once: true });
   }
 
-  /** Must be called from a direct user action while the permission is still default. */
-  async requestPermission(): Promise<boolean> {
-    if (!this.isSupported()) return false;
-    if (Notification.permission === 'granted') return true;
-    if (Notification.permission === 'denied') return false;
-
-    try {
-      return (await Notification.requestPermission()) === 'granted';
-    } catch (error) {
-      console.error('[Push] Permission request failed.', error);
+  /** Prepare the active registration before rendering a permission button on iOS. */
+  async prepareForPermissionPrompt(): Promise<boolean> {
+    const unsupportedReason = this.getUnsupportedReason();
+    if (unsupportedReason) {
+      this.lastFailureReason = unsupportedReason;
       return false;
     }
+
+    try {
+      const registration = await this.ensureServiceWorker();
+      this.activeRegistration = registration;
+      this.currentSubscription = await registration.pushManager.getSubscription();
+      this.lastFailureReason = null;
+      return true;
+    } catch (error) {
+      this.lastFailureReason = 'service-worker-not-ready';
+      console.error('[Push] Service worker is not ready for a permission request.', error);
+      return false;
+    }
+  }
+
+  getLastFailureReason(): PushFailureReason {
+    return this.lastFailureReason;
+  }
+
+  /**
+   * Call this directly from a click/tap. Safari expects pushManager.subscribe()
+   * itself to run in the user-gesture call stack so it can open the system prompt.
+   */
+  async subscribeFromUserGesture(registerWithApi = true): Promise<boolean> {
+    this.lastFailureReason = null;
+    const unsupportedReason = this.getUnsupportedReason();
+    if (unsupportedReason) {
+      this.lastFailureReason = unsupportedReason;
+      return false;
+    }
+    if (Notification.permission === 'denied') {
+      this.lastFailureReason = 'permission-denied';
+      return false;
+    }
+
+    const registration = this.activeRegistration;
+    if (!registration?.active) {
+      this.lastFailureReason = 'service-worker-not-ready';
+      void this.prepareForPermissionPrompt();
+      return false;
+    }
+
+    let subscription = this.currentSubscription;
+    const currentUserId = this.getCurrentUserId();
+    const subscriptionUserId = localStorage.getItem(PUSH_USER_KEY);
+
+    try {
+      if (
+        subscription &&
+        currentUserId &&
+        subscriptionUserId &&
+        currentUserId !== subscriptionUserId
+      ) {
+        await subscription.unsubscribe();
+        subscription = null;
+      }
+
+      if (subscription && !this.subscriptionUsesCurrentVapidKey(subscription)) {
+        await subscription.unsubscribe();
+        subscription = null;
+      }
+
+      if (!subscription) {
+        // Keep this call before the first await in the normal permission path.
+        const subscriptionRequest = registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: this.urlBase64ToUint8Array(this.vapidKey),
+        });
+        subscription = await subscriptionRequest;
+      }
+
+      this.currentSubscription = subscription;
+    } catch (error) {
+      const permissionAfterRequest = String(Notification.permission);
+      this.lastFailureReason = permissionAfterRequest === 'denied'
+        ? 'permission-denied'
+        : permissionAfterRequest === 'default'
+          ? 'permission-not-granted'
+          : 'subscription-failed';
+      console.error('[Push] Browser subscription request failed.', error);
+      return false;
+    }
+
+    if (!registerWithApi) return true;
+    return this.registerSubscriptionWithApi(subscription, currentUserId);
   }
 
   /**
@@ -136,17 +228,25 @@ class NotificationService {
    * Calling this again is safe and is required after login or a VAPID key rotation.
    */
   async subscribe(): Promise<boolean> {
-    if (!this.isSupported()) {
-      console.warn('[Push] Unsupported:', this.getUnsupportedReason());
+    this.lastFailureReason = null;
+    const unsupportedReason = this.getUnsupportedReason();
+    if (unsupportedReason) {
+      this.lastFailureReason = unsupportedReason;
+      console.warn('[Push] Unsupported:', unsupportedReason);
       return false;
     }
-
-    const permissionGranted = await this.requestPermission();
-    if (!permissionGranted) return false;
+    if (Notification.permission !== 'granted') {
+      this.lastFailureReason = Notification.permission === 'denied'
+        ? 'permission-denied'
+        : 'permission-not-granted';
+      return false;
+    }
 
     try {
       const registration = await this.ensureServiceWorker();
       let subscription = await registration.pushManager.getSubscription();
+      this.activeRegistration = registration;
+      this.currentSubscription = subscription;
       const currentUserId = this.getCurrentUserId();
       const subscriptionUserId = localStorage.getItem(PUSH_USER_KEY);
 
@@ -156,6 +256,7 @@ class NotificationService {
         await subscription.unsubscribe();
         await api.notifications.removeDevice({ endpoint: previousEndpoint }).catch(() => undefined);
         subscription = null;
+        this.currentSubscription = null;
       }
 
       if (subscription && !this.subscriptionUsesCurrentVapidKey(subscription)) {
@@ -163,6 +264,7 @@ class NotificationService {
         await subscription.unsubscribe();
         await api.notifications.removeDevice({ endpoint: oldEndpoint }).catch(() => undefined);
         subscription = null;
+        this.currentSubscription = null;
       }
 
       if (!subscription) {
@@ -170,14 +272,12 @@ class NotificationService {
           userVisibleOnly: true,
           applicationServerKey: this.urlBase64ToUint8Array(this.vapidKey),
         });
+        this.currentSubscription = subscription;
       }
 
-      await api.notifications.registerDevice(subscription.toJSON(), this.getDeviceType());
-      if (currentUserId) localStorage.setItem(PUSH_USER_KEY, currentUserId);
-      this.clearPromptDismissal();
-      console.info('[Push] Subscription synchronized.');
-      return true;
+      return this.registerSubscriptionWithApi(subscription, currentUserId);
     } catch (error) {
+      this.lastFailureReason = 'subscription-failed';
       console.error('[Push] Subscription failed.', error);
       return false;
     }
@@ -203,6 +303,7 @@ class NotificationService {
 
       const endpoint = subscription.endpoint;
       const unsubscribed = await subscription.unsubscribe();
+      this.currentSubscription = null;
 
       // Removing one browser must not globally disable a user's other devices.
       await api.notifications.removeDevice({ endpoint }).catch((error) => {
@@ -248,17 +349,21 @@ class NotificationService {
         })
         .then(async (registration) => {
           registration.update().catch(() => undefined);
-          if (registration.active) return registration;
+          const activeRegistration = registration.active
+            ? registration
+            : await Promise.race([
+                navigator.serviceWorker.ready,
+                new Promise<never>((_, reject) => {
+                  window.setTimeout(
+                    () => reject(new Error('Service worker activation timed out.')),
+                    SERVICE_WORKER_READY_TIMEOUT_MS,
+                  );
+                }),
+              ]);
 
-          return Promise.race([
-            navigator.serviceWorker.ready,
-            new Promise<never>((_, reject) => {
-              window.setTimeout(
-                () => reject(new Error('Service worker activation timed out.')),
-                SERVICE_WORKER_READY_TIMEOUT_MS,
-              );
-            }),
-          ]);
+          this.activeRegistration = activeRegistration;
+          this.currentSubscription = await activeRegistration.pushManager.getSubscription();
+          return activeRegistration;
         })
         .catch((error) => {
           this.registrationPromise = null;
@@ -267,6 +372,24 @@ class NotificationService {
     }
 
     return this.registrationPromise;
+  }
+
+  private async registerSubscriptionWithApi(
+    subscription: PushSubscription,
+    currentUserId: string | null,
+  ): Promise<boolean> {
+    try {
+      await api.notifications.registerDevice(subscription.toJSON(), this.getDeviceType());
+      if (currentUserId) localStorage.setItem(PUSH_USER_KEY, currentUserId);
+      this.clearPromptDismissal();
+      this.lastFailureReason = null;
+      console.info('[Push] Subscription synchronized.');
+      return true;
+    } catch (error) {
+      this.lastFailureReason = 'api-registration-failed';
+      console.error('[Push] Browser permission granted, but API registration failed.', error);
+      return false;
+    }
   }
 
   private getDeviceType(): string {

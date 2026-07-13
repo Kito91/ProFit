@@ -67,7 +67,7 @@ export const Profile = () => {
 
   const confirmEnableNotifications = async () => {
     try {
-      const success = await notificationService.subscribe();
+      const success = await notificationService.subscribeFromUserGesture();
       if (success) {
         setNotificationsEnabled(true);
         setProfile({ ...profile, notifications_enabled: true });

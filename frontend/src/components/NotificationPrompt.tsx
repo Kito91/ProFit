@@ -7,7 +7,7 @@ import { useAuth } from '../context/AuthContext';
 export const NotificationPrompt = () => {
   const { isAuthenticated } = useAuth();
   const [show, setShow] = useState(false);
-  const [status, setStatus] = useState<'prompt' | 'loading' | 'success' | 'denied' | 'error' | 'ios-guide'>('prompt');
+  const [status, setStatus] = useState<'prompt' | 'loading' | 'success' | 'denied' | 'error' | 'browser-error' | 'ios-guide'>('prompt');
   const autoTriedRef = useRef(false);
 
   const handleEnable = useCallback(async (fromUserGesture = false) => {
@@ -15,14 +15,23 @@ export const NotificationPrompt = () => {
 
     setStatus('loading');
     try {
-      const success = await notificationService.subscribe();
+      const success = fromUserGesture
+        ? await notificationService.subscribeFromUserGesture()
+        : await notificationService.syncSubscription();
 
       if (success) {
         setStatus('success');
         notificationService.clearPromptDismissal();
         setTimeout(() => setShow(false), 3000);
       } else {
-        setStatus(notificationService.getPermissionStatus() === 'denied' ? 'denied' : 'error');
+        const failureReason = notificationService.getLastFailureReason();
+        setStatus(
+          failureReason === 'permission-denied'
+            ? 'denied'
+            : failureReason === 'api-registration-failed'
+              ? 'error'
+              : 'browser-error',
+        );
         if (!notificationService.isPromptDismissed() || fromUserGesture) {
           setShow(true);
         }
@@ -65,9 +74,11 @@ export const NotificationPrompt = () => {
     }
 
     if (permission === 'default') {
+      void notificationService.prepareForPermissionPrompt();
       const delay = notificationService.isStandalone() ? 1500 : 4000;
-      const timer = setTimeout(() => {
-        if (!notificationService.isPromptDismissed()) {
+      const timer = setTimeout(async () => {
+        const isReady = await notificationService.prepareForPermissionPrompt();
+        if (isReady && !notificationService.isPromptDismissed()) {
           setShow(true);
         }
       }, delay);
@@ -78,8 +89,8 @@ export const NotificationPrompt = () => {
   // When user returns from browser settings with permission now granted
   useEffect(() => {
     const handleFocus = () => {
-      if ('Notification' in window && Notification.permission === 'granted' && (status === 'denied' || status === 'error' || status === 'prompt')) {
-        handleEnable(true);
+      if ('Notification' in window && Notification.permission === 'granted' && (status === 'denied' || status === 'error' || status === 'browser-error' || status === 'prompt')) {
+        handleEnable(false);
       }
     };
     window.addEventListener('focus', handleFocus);
@@ -167,17 +178,19 @@ export const NotificationPrompt = () => {
                     <p className="text-sm text-[var(--text-muted)] font-medium">Você agora receberá lembretes e atualizações do Profit.</p>
                   </motion.div>
 
-                ) : status === 'denied' || status === 'error' ? (
+                ) : status === 'denied' || status === 'error' || status === 'browser-error' ? (
                   <div className="flex flex-col items-center text-center py-2">
                     <div className="w-14 h-14 bg-rose-100 rounded-2xl flex items-center justify-center mb-4">
                       <BellOff className="w-7 h-7 text-rose-500" />
                     </div>
                     <h3 className="text-lg font-black text-[var(--text-main)] mb-2">
-                      {status === 'denied' ? 'Acesso bloqueado' : 'Não foi possível ativar'}
+                      {status === 'denied' ? 'Acesso bloqueado' : status === 'error' ? 'Não foi possível registrar' : 'O iOS não abriu a permissão'}
                     </h3>
                     <div className="bg-rose-50 rounded-xl p-3 text-xs text-rose-600 font-medium leading-relaxed text-left mb-4">
                       {status === 'error' ? (
                         <>Verifique sua conexão e tente novamente. A permissão existe, mas o dispositivo ainda não foi registrado.</>
+                      ) : status === 'browser-error' ? (
+                        <>Feche o ProFit, abra novamente pelo ícone no Ecrã Inicial e toque em ativar. Confirme também que o dispositivo usa iOS 16.4 ou mais recente.</>
                       ) : (
                         <>
                       Para ativar, clique no ícone de cadeado 🔒 na barra de endereços do navegador e altere <strong>Notificações</strong> para <strong>Permitir</strong>.

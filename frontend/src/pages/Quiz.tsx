@@ -773,7 +773,7 @@ export const Quiz = () => {
 
   const handleEnableNotifications = async () => {
     try {
-      const permissionGranted = await notificationService.requestPermission();
+      const permissionGranted = await notificationService.subscribeFromUserGesture(false);
       setPushSubscription(permissionGranted ? true : null);
     } catch (err) {
       console.error('Erro ao solicitar permissão:', err);
@@ -1875,7 +1875,7 @@ export const Quiz = () => {
       case 26: {
         const handleEnableNotifications = async () => {
           try {
-            await notificationService.requestPermission();
+            await notificationService.subscribeFromUserGesture(false);
           } catch (err) {
             console.error('Erro ao solicitar permissão:', err);
           } finally {

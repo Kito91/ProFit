@@ -111,7 +111,7 @@ export const Account = () => {
     const newValue = !notificationsEnabled;
     try {
       if (newValue) {
-        const success = await notificationService.subscribe();
+        const success = await notificationService.subscribeFromUserGesture();
         if (!success) {
           setNotificationsEnabled(false);
           setError("Permissao de notificacao negada ou indisponivel no navegador.");

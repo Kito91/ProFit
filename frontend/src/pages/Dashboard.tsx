@@ -425,7 +425,7 @@ export const Dashboard = () => {
 
   const handleEnableNotifications = async () => {
     try {
-      const success = await notificationService.subscribe();
+      const success = await notificationService.subscribeFromUserGesture();
       
       if (success) {
         console.log('[Dashboard] Native notifications activated successfully');

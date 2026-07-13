@@ -187,7 +187,7 @@ export const NotificationSettings: React.FC = () => {
     } else {
       setIsSubscribing(true);
       try {
-        const ok = await notificationService.subscribe();
+        const ok = await notificationService.subscribeFromUserGesture();
         if (ok) {
           await refreshPushState();
           toast.success('Notificações ativadas! 🔔');

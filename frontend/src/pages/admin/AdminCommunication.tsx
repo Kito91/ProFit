@@ -171,7 +171,7 @@ const AdminCommunication: React.FC = () => {
 
     const handleSubscribe = async () => {
         try {
-            const subscribed = await notificationService.subscribe();
+            const subscribed = await notificationService.subscribeFromUserGesture();
             setIsSubscribed(subscribed);
             if (!subscribed) {
                 setStatus({ type: 'error', message: 'Não foi possível registrar este navegador.' });
