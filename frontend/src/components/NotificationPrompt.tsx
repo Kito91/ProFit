@@ -83,10 +83,9 @@ export const NotificationPrompt = () => {
     }
 
     if (permission === 'default') {
-      void notificationService.prepareForPermissionPrompt().then((ready) => {
-        setPushReady(ready);
-        if (!ready) setStatus('browser-error');
-      });
+      // This only prepares the service worker. The native permission request is
+      // reserved for the explicit click on the activation button below.
+      void notificationService.prepareForPermissionPrompt().then(setPushReady);
       const delay = notificationService.isStandalone() ? 1500 : 4000;
       const timer = setTimeout(() => {
         if (!notificationService.isPromptDismissed()) {
