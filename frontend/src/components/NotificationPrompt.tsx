@@ -85,14 +85,23 @@ export const NotificationPrompt = () => {
     if (permission === 'default') {
       // This only prepares the service worker. The native permission request is
       // reserved for the explicit click on the activation button below.
-      void notificationService.prepareForPermissionPrompt().then(setPushReady);
+      let cancelled = false;
+      const preparation = notificationService.prepareForPermissionPrompt();
       const delay = notificationService.isStandalone() ? 1500 : 4000;
-      const timer = setTimeout(() => {
-        if (!notificationService.isPromptDismissed()) {
+      const timer = window.setTimeout(async () => {
+        const ready = await preparation;
+        if (cancelled) return;
+
+        setPushReady(ready);
+        if (ready && !notificationService.isPromptDismissed()) {
+          setStatus('prompt');
           setShow(true);
         }
       }, delay);
-      return () => clearTimeout(timer);
+      return () => {
+        cancelled = true;
+        window.clearTimeout(timer);
+      };
     }
 
     if (permission === 'denied') {
@@ -264,7 +273,7 @@ export const NotificationPrompt = () => {
                       disabled={status === 'loading' || !pushReady}
                       className="w-full py-4 bg-gradient-to-r from-[#56AB2F] to-[#A8E063] text-white rounded-[18px] font-black text-[14px] uppercase tracking-widest flex items-center justify-center gap-2 active:scale-95 transition-all shadow-[0_8px_24px_rgba(86,171,47,0.35)] disabled:opacity-70"
                     >
-                      {status === 'loading' || !pushReady ? (
+                      {status === 'loading' ? (
                         <><Loader2 className="w-4 h-4 animate-spin" /><span>Ativando...</span></>
                       ) : (
                         <><ShieldCheck className="w-4 h-4" /><span>Ativar Notificações</span></>
