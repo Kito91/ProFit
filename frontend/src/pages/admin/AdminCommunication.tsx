@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Send, Users, Bell, AlertCircle, CheckCircle2, 
   Layout, ChevronDown, Calendar, Mail, History, 
@@ -11,6 +11,17 @@ import { api, API_URL } from '../../services/api';
 import { notificationService } from '../../services/notificationService';
 import { useAuth } from '../../context/AuthContext';
 import { motion } from 'framer-motion';
+
+const PERSONALIZATION_PARAMETERS = [
+    '{{name}}',
+    '{{nome}}',
+    '{{age}}',
+    '{{idade}}',
+    '{{weight}}',
+    '{{peso}}',
+    '{{kilos}}',
+    '{{kg}}'
+] as const;
 
 const AdminCommunication: React.FC = () => {
     // UI State
@@ -28,10 +39,12 @@ const AdminCommunication: React.FC = () => {
     const [notifTitle, setNotifTitle] = useState('');
     const [notifBody, setNotifBody] = useState('');
     const [notifType, setNotifType] = useState('info');
+    const notifBodyRef = useRef<HTMLTextAreaElement>(null);
     
     // Form State - Emails
     const [emailSubject, setEmailSubject] = useState('');
     const [emailContent, setEmailContent] = useState('');
+    const emailContentRef = useRef<HTMLTextAreaElement>(null);
     const [emailButtonText, setEmailButtonText] = useState('Ver no App');
     const [emailButtonLink, setEmailButtonLink] = useState('');
     
@@ -327,6 +340,40 @@ const AdminCommunication: React.FC = () => {
         }
     };
 
+    const insertNotificationParameter = (parameter: string) => {
+        const textarea = notifBodyRef.current;
+        const selectionStart = textarea?.selectionStart ?? notifBody.length;
+        const selectionEnd = textarea?.selectionEnd ?? selectionStart;
+        const nextBody = `${notifBody.slice(0, selectionStart)}${parameter}${notifBody.slice(selectionEnd)}`;
+
+        setNotifBody(nextBody);
+
+        requestAnimationFrame(() => {
+            if (!textarea) return;
+
+            const nextCursorPosition = selectionStart + parameter.length;
+            textarea.focus();
+            textarea.setSelectionRange(nextCursorPosition, nextCursorPosition);
+        });
+    };
+
+    const insertEmailParameter = (parameter: string) => {
+        const textarea = emailContentRef.current;
+        const selectionStart = textarea?.selectionStart ?? emailContent.length;
+        const selectionEnd = textarea?.selectionEnd ?? selectionStart;
+        const nextContent = `${emailContent.slice(0, selectionStart)}${parameter}${emailContent.slice(selectionEnd)}`;
+
+        setEmailContent(nextContent);
+
+        requestAnimationFrame(() => {
+            if (!textarea) return;
+
+            const nextCursorPosition = selectionStart + parameter.length;
+            textarea.focus();
+            textarea.setSelectionRange(nextCursorPosition, nextCursorPosition);
+        });
+    };
+
     const loadTestTemplate = () => {
         const proTemplate = templates.find(t => t.id === 'pro_upsell');
         if (proTemplate) {
@@ -489,7 +536,26 @@ const AdminCommunication: React.FC = () => {
                                         </div>
                                         <div className="space-y-2">
                                             <label className="text-[14px] font-bold text-slate-700 dark:text-slate-300">Mensagem</label>
-                                            <textarea required value={notifBody} onChange={(e) => setNotifBody(e.target.value)} className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-[15px] dark:text-white h-24 resize-none" placeholder="Conteúdo da notificação..." />
+                                            <textarea ref={notifBodyRef} required value={notifBody} onChange={(e) => setNotifBody(e.target.value)} className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-[15px] dark:text-white h-24 resize-none" placeholder="Conteúdo da notificação..." />
+                                            <div className="space-y-2 pt-1">
+                                                <p className="text-[12px] font-semibold text-slate-500 dark:text-slate-400">
+                                                    Parâmetros personalizados — clique para inserir
+                                                </p>
+                                                <div className="flex flex-wrap gap-2">
+                                                    {PERSONALIZATION_PARAMETERS.map((parameter) => (
+                                                        <button
+                                                            key={parameter}
+                                                            type="button"
+                                                            onMouseDown={(event) => event.preventDefault()}
+                                                            onClick={() => insertNotificationParameter(parameter)}
+                                                            className="rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1.5 font-mono text-[12px] font-bold text-indigo-600 transition-colors hover:border-indigo-400 hover:bg-indigo-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-300 dark:hover:border-indigo-400 dark:hover:bg-indigo-500/20"
+                                                            aria-label={`Inserir parâmetro ${parameter}`}
+                                                        >
+                                                            {parameter}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
                                         </div>
                                     </>
                                 ) : (
@@ -505,7 +571,26 @@ const AdminCommunication: React.FC = () => {
                                         </div>
                                         <div className="space-y-2">
                                             <label className="text-[14px] font-bold text-slate-700 dark:text-slate-300">Conteúdo (HTML/Text)</label>
-                                            <textarea required value={emailContent} onChange={(e) => setEmailContent(e.target.value)} className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-[15px] dark:text-white h-48 resize-none font-mono" placeholder="Olá [Nome], você está indo muito bem..." />
+                                            <textarea ref={emailContentRef} required value={emailContent} onChange={(e) => setEmailContent(e.target.value)} className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-[15px] dark:text-white h-48 resize-none font-mono" placeholder="Olá [Nome], você está indo muito bem..." />
+                                            <div className="space-y-2 pt-1">
+                                                <p className="text-[12px] font-semibold text-slate-500 dark:text-slate-400">
+                                                    Parâmetros personalizados — clique para inserir
+                                                </p>
+                                                <div className="flex flex-wrap gap-2">
+                                                    {PERSONALIZATION_PARAMETERS.map((parameter) => (
+                                                        <button
+                                                            key={parameter}
+                                                            type="button"
+                                                            onMouseDown={(event) => event.preventDefault()}
+                                                            onClick={() => insertEmailParameter(parameter)}
+                                                            className="rounded-lg border border-green-200 bg-green-50 px-2.5 py-1.5 font-mono text-[12px] font-bold text-green-700 transition-colors hover:border-green-400 hover:bg-green-100 focus:outline-none focus:ring-2 focus:ring-green-500/30 dark:border-green-500/30 dark:bg-green-500/10 dark:text-green-300 dark:hover:border-green-400 dark:hover:bg-green-500/20"
+                                                            aria-label={`Inserir parâmetro ${parameter}`}
+                                                        >
+                                                            {parameter}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
                                         </div>
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                             <div className="space-y-2">

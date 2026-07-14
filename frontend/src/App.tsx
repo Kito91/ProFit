@@ -58,7 +58,7 @@ import AdminAnalytics from './pages/admin/AdminAnalytics';
 import AdminSocial from './pages/admin/AdminSocial';
 
 const ProtectedRoute = ({ children }: { children: JSX.Element }) => {
-  const { user, isAuthenticated, isLoading, authLoading, checkOnboardingStatus, totalUsersCount } = useAuth();
+  const { user, isAuthenticated, isLoading, authLoading, checkOnboardingStatus } = useAuth();
   
   if (isLoading || authLoading) {
     return (
@@ -74,37 +74,49 @@ const ProtectedRoute = ({ children }: { children: JSX.Element }) => {
 
   // Subscription & Block Check (ERRA 5, 6 & 9)
   const isBlocked = user?.is_blocked === true;
-  const isExpired = user?.end_date && new Date(user.end_date) < new Date();
-  
+  const expirationValue = user?.end_date || user?.plan_expiration;
+  const expirationDate = expirationValue ? new Date(expirationValue) : null;
+  const isExpired = !!expirationDate
+    && !Number.isNaN(expirationDate.getTime())
+    && expirationDate.getTime() <= Date.now();
+
   // Free trial: 3 days from account creation
+  const FREE_TRIAL_DAYS = 3;
   const getDaysSinceCreation = () => {
-    if (!user?.created_at) return 0;
+    if (!user?.created_at) return FREE_TRIAL_DAYS;
     const date = new Date(user.created_at);
-    if (isNaN(date.getTime())) return 0;
+    if (Number.isNaN(date.getTime())) return FREE_TRIAL_DAYS;
     return (new Date().getTime() - date.getTime()) / (1000 * 60 * 60 * 24);
   };
 
   const daysSinceCreation = getDaysSinceCreation();
-  const FREE_TRIAL_DAYS = 3;
   const isOnFreeTrial = daysSinceCreation < FREE_TRIAL_DAYS;
-
-  const isServerActive = user?.subscription_status === 'ativo';
-  const isUnderLimit = totalUsersCount > 0 ? totalUsersCount <= 20 : true;
-  const isPromoActive = isServerActive || isUnderLimit || user?.is_early_adopter || isOnFreeTrial;
-  
-  const isInactive = !isPromoActive && (user?.subscription_status !== 'ativo' || isExpired) && user?.role !== 'admin' && !user?.is_influencer;
+  const normalizedPlan = (user?.plan || user?.plan_type || '').trim().toLowerCase();
+  const normalizedSubscriptionStatus = (user?.subscription_status || user?.plan_status || '').trim().toLowerCase();
+  const isFreePlan = normalizedPlan === 'free' || normalizedPlan === 'gratuito';
+  const isServerActive = normalizedSubscriptionStatus === 'ativo' || normalizedSubscriptionStatus === 'active';
+  const isRegularUser = user?.role !== 'admin' && !user?.is_influencer;
+  const shouldRedirectToPlans = isRegularUser && (
+    isExpired
+    || (!isOnFreeTrial && isFreePlan)
+    || (!isOnFreeTrial && !isServerActive)
+  );
   
   const allowedWhenBlocked = ['/renovar-plano', '/checkout', '/plans', '/profile', '/account', '/quiz', '/onboarding'];
   const currentPath = window.location.pathname;
 
-  if ((isBlocked || isInactive) && !allowedWhenBlocked.some(path => currentPath.startsWith(path))) {
+  if (isBlocked && !allowedWhenBlocked.some(path => currentPath.startsWith(path))) {
     return <Navigate to="/renovar-plano" replace />;
+  }
+
+  if (shouldRedirectToPlans && !allowedWhenBlocked.some(path => currentPath.startsWith(path))) {
+    return <Navigate to="/plans" replace />;
   }
 
   // Onboarding Check: Force users to quiz if not completed
   const isOnboardingCompleted = checkOnboardingStatus();
   
-  if (!isOnboardingCompleted && currentPath !== '/quiz' && !currentPath.startsWith('/quiz/') && currentPath !== '/onboarding' && user?.role !== 'admin') {
+  if (!isOnboardingCompleted && currentPath !== '/plans' && currentPath !== '/quiz' && !currentPath.startsWith('/quiz/') && currentPath !== '/onboarding' && user?.role !== 'admin') {
     return <Navigate to="/quiz" replace />;
   }
 
