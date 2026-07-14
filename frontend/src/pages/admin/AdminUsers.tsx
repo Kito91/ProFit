@@ -211,6 +211,40 @@ const AdminUsers: React.FC = () => {
             }
         });
     };
+
+    const handleRemoveInfluencer = (user: any) => {
+        setConfirmOptions({
+            isOpen: true,
+            title: 'Remover Influenciador',
+            message: `Deseja remover ${user.name || user.email} da lista de influenciadores? A conta continuará ativa, mas perderá os privilégios de Influenciador VIP.`,
+            type: 'danger',
+            confirmText: 'Remover',
+            showCancel: true,
+            onConfirm: async () => {
+                try {
+                    await api.admin.removeInfluencer(user.id);
+                    setUsers(currentUsers => currentUsers.map(currentUser => (
+                        currentUser.id === user.id
+                            ? { ...currentUser, is_influencer: false }
+                            : currentUser
+                    )));
+                } catch (err: any) {
+                    console.error('Error removing influencer:', err);
+                    window.setTimeout(() => {
+                        setConfirmOptions({
+                            isOpen: true,
+                            title: 'Erro',
+                            message: err?.message || 'Não foi possível remover o status de influenciador.',
+                            type: 'danger',
+                            confirmText: 'Fechar',
+                            showCancel: false,
+                            onConfirm: async () => closeConfirm()
+                        });
+                    }, 0);
+                }
+            }
+        });
+    };
     
     const [isExporting, setIsExporting] = useState(false);
 
@@ -526,9 +560,20 @@ const AdminUsers: React.FC = () => {
                                                 </button>
                                             )}
                                             {user.is_influencer && (
-                                                <div className="p-1.5 text-amber-500 bg-amber-50 dark:bg-amber-500/10 rounded-md" title="Influenciador VIP">
-                                                    <Award size={16} />
-                                                </div>
+                                                activeTab === 'influencers' ? (
+                                                    <button
+                                                        onClick={() => handleRemoveInfluencer(user)}
+                                                        className="p-1.5 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-md transition-colors"
+                                                        title="Remover Influenciador"
+                                                        aria-label={`Remover ${user.name || user.email} dos influenciadores`}
+                                                    >
+                                                        <UserX size={16} />
+                                                    </button>
+                                                ) : (
+                                                    <div className="p-1.5 text-amber-500 bg-amber-50 dark:bg-amber-500/10 rounded-md" title="Influenciador VIP">
+                                                        <Award size={16} />
+                                                    </div>
+                                                )
                                             )}
 
                                             <button 

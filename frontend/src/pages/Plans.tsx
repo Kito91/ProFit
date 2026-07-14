@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
 import {
-  ArrowLeft, Crown, Check, Zap, Clock,
+  ArrowLeft, Crown, Check, Zap,
   Brain, Dumbbell, Flame, BarChart2, Bell, Star, Lock, Tag, Loader2
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
@@ -34,6 +33,33 @@ const PLANS = [
 ] as const;
 
 type PlanId = typeof PLANS[number]['id'];
+type PlanViewState = 'pro' | 'trial' | 'expired' | 'free';
+
+const getProfilePlanState = (user: any): PlanViewState => {
+  if (user?.role === 'admin' || user?.is_influencer) return 'pro';
+
+  const plan = String(user?.plan || user?.plan_type || '').trim().toLowerCase();
+  const subscriptionStatus = String(user?.subscription_status || user?.plan_status || '').trim().toLowerCase();
+  const expirationValue = user?.end_date || user?.plan_expiration;
+  const expirationDate = expirationValue ? new Date(expirationValue) : null;
+  const hasValidExpiration = !!expirationDate && !Number.isNaN(expirationDate.getTime());
+  const isExpired = hasValidExpiration && expirationDate.getTime() <= Date.now();
+  const isActive = subscriptionStatus === 'ativo' || subscriptionStatus === 'active';
+  const isFree = plan === 'free' || plan === 'gratuito';
+  const isPaidPlan = ['pro', 'premium', 'monthly', 'annual', 'mensal', 'anual'].includes(plan);
+
+  if (isExpired && (isPaidPlan || !!expirationValue)) return 'expired';
+  if (isActive && !isExpired && !isFree) return 'pro';
+
+  const createdAt = user?.created_at ? new Date(user.created_at) : null;
+  const hasValidCreationDate = !!createdAt && !Number.isNaN(createdAt.getTime());
+  const daysSinceCreation = hasValidCreationDate
+    ? (Date.now() - createdAt.getTime()) / 86400000
+    : FREE_TRIAL_DAYS;
+
+  if (!isActive && daysSinceCreation < FREE_TRIAL_DAYS) return 'trial';
+  return 'free';
+};
 
 const FEATURES = [
   { icon: Brain,     label: 'Plano alimentar com IA'            },
@@ -49,43 +75,59 @@ export const Plans = () => {
   const navigate = useNavigate();
   const { user }  = useAuth();
   const [selected,       setSelected]       = useState<PlanId>('monthly');
-  const [daysUsed,       setDaysUsed]       = useState(FREE_TRIAL_DAYS);
-  const [daysLeft,       setDaysLeft]       = useState(0);
-  const [isTrialActive,  setIsTrialActive]  = useState(false);
-  const [isPro,          setIsPro]          = useState(false);
+  const [planState,      setPlanState]      = useState<PlanViewState>(() => getProfilePlanState(user));
   const [loading,        setLoading]        = useState(false);
   const [error,          setError]          = useState<string | null>(null);
   const [couponCode,     setCouponCode]     = useState('');
   const [showCoupon,     setShowCoupon]     = useState(false);
 
   useEffect(() => {
+    const profilePlanState = getProfilePlanState(user);
+    setPlanState(profilePlanState);
+
+    if (!user?.id) return;
+
+    let isCancelled = false;
     if (user?.id) api.user.updateFunnelStep('PLAN_VIEWED').catch(() => {});
 
     api.subscription.getStatus().then((s: any) => {
-      const isTrial = s?.is_trial ?? false;
-      const left    = typeof s?.trial_days_left === 'number' ? s.trial_days_left : 0;
-      const paid    = (s?.is_pro ?? false) && !isTrial;
-      const used    = Math.max(0, FREE_TRIAL_DAYS - left);
-      setDaysUsed(used);
-      setDaysLeft(left);
-      setIsPro(paid);
-      setIsTrialActive(isTrial && left > 0);
+      if (isCancelled) return;
+
+      const trialDaysLeft = typeof s?.trial_days_left === 'number' ? s.trial_days_left : 0;
+
+      if (s?.is_trial === true) {
+        setPlanState(trialDaysLeft > 0 ? 'trial' : profilePlanState === 'expired' ? 'expired' : 'free');
+        return;
+      }
+
+      if (s?.is_pro === true) {
+        setPlanState('pro');
+        return;
+      }
+
+      if (s?.is_pro === false) {
+        setPlanState(profilePlanState === 'expired' ? 'expired' : 'free');
+        return;
+      }
+
+      setPlanState(profilePlanState);
     }).catch(() => {
-      const createdAt = user?.created_at ? new Date(user.created_at) : null;
-      const used = createdAt
-        ? Math.floor((Date.now() - createdAt.getTime()) / 86400000)
-        : FREE_TRIAL_DAYS;
-      const left = Math.max(0, FREE_TRIAL_DAYS - used);
-      const pro  = user?.subscription_status === 'ativo';
-      setDaysUsed(used);
-      setDaysLeft(left);
-      setIsPro(pro);
-      setIsTrialActive(left > 0 && !pro);
+      if (!isCancelled) setPlanState(profilePlanState);
     });
-  }, [user?.id]);
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [user]);
 
   const selectedPlan  = PLANS.find(p => p.id === selected)!;
-  const trialBarWidth = Math.min(100, (daysUsed / FREE_TRIAL_DAYS) * 100);
+  const isPro = planState === 'pro';
+  const showPurchaseOptions = !isPro;
+  const expirationValue = user?.end_date || user?.plan_expiration;
+  const expirationDate = expirationValue ? new Date(expirationValue) : null;
+  const formattedExpiration = expirationDate && !Number.isNaN(expirationDate.getTime())
+    ? expirationDate.toLocaleDateString('pt-PT')
+    : null;
 
   const handlePay = async () => {
     setError(null);
@@ -133,52 +175,36 @@ export const Plans = () => {
             <div>
               <p className="text-[14px] font-bold text-[#22C55E]">Plano Pro Ativo</p>
               <p className="text-[12px] text-slate-500">
-                {user?.end_date
-                  ? `Válido até ${new Date(user.end_date).toLocaleDateString('pt-PT')}`
+                {formattedExpiration
+                  ? `Válido até ${formattedExpiration}`
                   : 'Acesso ilimitado ativo'}
               </p>
             </div>
           </div>
-        ) : isTrialActive ? (
-          <div className="rounded-2xl p-4 bg-amber-500/10 border border-amber-500/20">
-            <div className="flex items-center gap-3 mb-3">
-              <div className="w-10 h-10 rounded-xl bg-amber-500/20 flex items-center justify-center flex-shrink-0">
-                <Clock className="w-5 h-5 text-amber-400" />
-              </div>
-              <div>
-                <p className="text-[14px] font-bold text-amber-400">
-                  Free Trial — {daysLeft} dia{daysLeft !== 1 ? 's' : ''} restante{daysLeft !== 1 ? 's' : ''}
-                </p>
-                <p className="text-[12px] text-slate-500">Assine antes de terminar para manter o acesso</p>
-              </div>
-            </div>
-            <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
-              <motion.div
-                initial={{ width: 0 }}
-                animate={{ width: `${trialBarWidth}%` }}
-                transition={{ duration: 0.8, ease: 'easeOut' }}
-                className="h-full bg-amber-400 rounded-full"
-              />
-            </div>
-            <div className="flex justify-between mt-1">
-              <span className="text-[10px] text-slate-600">Dia 1</span>
-              <span className="text-[10px] text-slate-600">Dia {FREE_TRIAL_DAYS}</span>
-            </div>
-          </div>
-        ) : (
+        ) : planState === 'expired' ? (
           <div className="rounded-2xl p-4 bg-red-500/10 border border-red-500/20 flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-red-500/20 flex items-center justify-center flex-shrink-0">
               <Lock className="w-5 h-5 text-red-400" />
             </div>
             <div>
-              <p className="text-[14px] font-bold text-red-400">Trial expirado</p>
-              <p className="text-[12px] text-slate-500">Assine o Pro para continuar usando o app</p>
+              <p className="text-[14px] font-bold text-red-400">Plano Pro expirado</p>
+              <p className="text-[12px] text-slate-500">Escolha um plano para renovar o seu acesso</p>
             </div>
           </div>
-        )}
+        ) : planState === 'free' ? (
+          <div className="rounded-2xl p-4 bg-slate-500/10 border border-slate-500/20 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-slate-500/20 flex items-center justify-center flex-shrink-0">
+              <Lock className="w-5 h-5 text-slate-400" />
+            </div>
+            <div>
+              <p className="text-[14px] font-bold text-slate-300">Plano Free</p>
+              <p className="text-[12px] text-slate-500">Escolha um plano Pro para continuar usando o app</p>
+            </div>
+          </div>
+        ) : null}
 
         {/* ── Seleção de Plano ── */}
-        {!isPro && (
+        {showPurchaseOptions && (
           <>
             <p className="section-label">Escolha o período</p>
             <div className="grid grid-cols-2 gap-3">
@@ -251,7 +277,7 @@ export const Plans = () => {
       </div>
 
       {/* ── Botão Pagar ── */}
-      {!isPro && (
+      {showPurchaseOptions && (
         <div className="fixed bottom-0 left-0 right-0 z-40">
           <div className="max-w-md mx-auto px-5 pb-6 pt-4 bg-gradient-to-t from-[#0A0F14] via-[#0A0F14]/97 to-transparent space-y-3">
 

@@ -665,6 +665,11 @@ export const api = {
       body: JSON.stringify({ email, name })
     }).then(handleResponse),
 
+    removeInfluencer: (id: string) => fetch(`${API_URL}/admin/influencers/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      headers: getHeaders()
+    }).then(handleResponse),
+
     // Coupons Management
     getCoupons: () => fetch(`${API_URL}/admin/coupons`, {
       headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
